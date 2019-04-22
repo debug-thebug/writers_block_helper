@@ -1,3 +1,4 @@
 require tornado>=6.0.2
 require pymongo>=3.7.2
 require dnspython>=1.16.0
+require wordcloud>=1.5.0
