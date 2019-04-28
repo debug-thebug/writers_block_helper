@@ -10,16 +10,16 @@ from wordcloud import WordCloud
 
 
 class WordCloudGenerator:
-    def __init__(self, text):
-        self.text = text
+    def __init__(self):
+        self.wordcloud = WordCloud(max_font_size=40)
         
-    def get_wc(self, name):
-        wordcloud = WordCloud(max_font_size=40).generate(self.text)
+    def generate_wc(self, text, fname):
+        self.wordcloud.generate(text)
         plt.figure()
-        plt.imshow(wordcloud, interpolation="bilinear")
+        plt.imshow(self.wordcloud, interpolation="bilinear")
         plt.axis("off")
-        plt.savefig(name, figsize=(200,100), dpi=100)
+        plt.savefig(fname, figsize=(200,100), dpi=100)
         
-text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
-wC = WordCloudGenerator(text1)
-print(wC.get_wc('save_fig.jpg'))
+# text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
+# wC = WordCloudGenerator()
+# wC.generate_wc(text=text1, fname='save_fig.jpg')

@@ -12,9 +12,44 @@
 
 <div style="width:500px; height:183px; border:1.5px solid #9db8c9; text-align: center; background-color:#B9D9EB; border-radius: 15px">
 <p><h1 style="font-family:verdana;"><font size="4" color="#000000">Enter your sentence(s) below:</font></h1></p>
-<form action="/upload">
+<form action="" method="POST">
   <textarea name="text" rows="5" cols="50"></textarea>
   <br>
   <input type="Submit">
 </form>
+    <p></p><p></p>
+    <div id="sentence">
+        {% if message is not None %}
+            <p>{{ message }}</p>
+        {% end %}
+    </div>
+
+    <p></p><p></p>
+    <div id="corrections" style="text-align: left">
+        {% if corrections is not None %}
+        <h3>Corrections:</h3>
+            <ul>
+            {% for key, values in corrections.items() %}
+                {% if len(values) == 0 %}
+                    {% continue %}
+                {% end %}
+                <li>{{ key }}
+                    <ul>
+                {% for value in values %}
+                    <li>{{ value }}</li>
+                {% end %}
+                    </ul>
+                </li>
+                <br>
+            {% end %}
+            </ul>
+        {% end %}
+    </div>
+
+    <div id="wordcloud" style="text-align: left">
+        {% if wordcloud %}
+            <h3>Word Cloud:</h3>
+            <img src="/static/Dynamic_Word_Cloud.jpg" />
+        {% end %}
+    </div>
 </div>

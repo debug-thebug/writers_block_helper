@@ -173,14 +173,20 @@ class GrammarBotApiResponse:
 
 
 class ValidityChecker:
-    def __init__(self, text):
-        nlp = English()
-        nlp.add_pipe(nlp.create_pipe('sentencizer'))
+    def __init__(self):
+        self.nlp = English()
+        self.nlp.add_pipe(self.nlp.create_pipe('sentencizer'))
         self.client = GrammarBotClient()
-        doc = nlp(text)
-        self.sentences = [sent.string.strip() for sent in doc.sents]
+
+    def len_corrections(self, corrections):
+        for k, vs in corrections.items():
+            if len(vs) > 0:
+                return 1
+        return 0
             
-    def corrections(self):
+    def corrections(self, text):
+        doc = self.nlp(text)
+        self.sentences = [sent.string.strip() for sent in doc.sents]
         sentence_corrections_dict = OrderedDict()
         
         for sentence in self.sentences:
@@ -192,5 +198,6 @@ class ValidityChecker:
     
 text1 = "Yur Thanksgiving dinner was delicious. Thank you soo much, and hope too join you next year!"
 text2 = "I cant remember how to go their."
-checker = ValidityChecker(text2)
-print(checker.corrections())
+# checker = ValidityChecker()
+# print(checker.corrections(text=text1))
+# print(checker.corrections(text=text2))
