@@ -59,11 +59,30 @@
     </div>
 
     <div id="wordcloud" style="text-align: left">
-        {% if wordcloud %}
+        {% if wordcloud%}
+			{% if words is not None %}
             <h3>Word Cloud:</h3>
-            <img src="/static/Dynamic_Word_Cloud_0.jpg" />
-			<img src="/static/Dynamic_Word_Cloud_1.jpg" />
-			<img src="/static/Dynamic_Word_Cloud_2.jpg" />
+				<ul>
+					<li> 
+						{{ words[0] }} 
+						<br>
+						<img src="/static/Dynamic_Word_Cloud_0.jpg" />
+						<br>
+					</li>
+					<li> 
+						{{ words[1] }} 
+						<br>
+						<img src="/static/Dynamic_Word_Cloud_1.jpg" />
+						<br>
+					</li>
+					<li> 
+						{{ words[2] }} 
+						<br>
+						<img src="/static/Dynamic_Word_Cloud_2.jpg" />
+						<br>
+					</li>					
+				</ul>
+			{% end %}
         {% end %}
     </div>
 </div>
