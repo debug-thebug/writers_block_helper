@@ -7,14 +7,26 @@
 
 ####################################################################################################
 
+from __future__ import unicode_literals
+from __future__ import absolute_import
+from __future__ import division
+
+from io import open
+
+from builtins import str, bytes, dict, int
+from builtins import map, zip, filter
+from builtins import object, range
+
 import re
 import itertools
+
+from functools import cmp_to_key
 
 #--- TEXT, SENTENCE AND WORD -----------------------------------------------------------------------
 # The search() and match() functions work on Text, Sentence and Word objects (see pattern.text.tree),
 # i.e., the parse tree including part-of-speech tags and phrase chunk tags.
 
-# The pattern.text.search Match object will contain matched Word objects, 
+# The pattern.text.search Match object will contain matched Word objects,
 # emulated with the following classes if the original input was a plain string:
 
 PUNCTUATION = ".,;:!?()[]{}`'\"@#$^&*+-|=~_"
@@ -22,23 +34,25 @@ PUNCTUATION = ".,;:!?()[]{}`'\"@#$^&*+-|=~_"
 RE_PUNCTUATION = "|".join(map(re.escape, PUNCTUATION))
 RE_PUNCTUATION = re.compile("(%s)" % RE_PUNCTUATION)
 
+
 class Text(list):
 
     def __init__(self, string="", token=["word"]):
         """ A list of sentences, where each sentence is separated by a period.
         """
         list.__init__(self, (Sentence(s + ".", token) for s in string.split(".")))
-    
+
     @property
     def sentences(self):
         return self
-        
+
     @property
     def words(self):
         return list(chain(*self))
 
+
 class Sentence(list):
-    
+
     def __init__(self, string="", token=["word"]):
         """ A list of words, where punctuation marks are split from words.
         """
@@ -48,7 +62,7 @@ class Sentence(list):
         s = s.replace("n ' t", " n't")
         s = s.split(" ")
         list.__init__(self, (Word(self, w, index=i) for i, w in enumerate(s)))
-        
+
     @property
     def string(self):
         return " ".join(w.string for w in self)
@@ -56,32 +70,34 @@ class Sentence(list):
     @property
     def words(self):
         return self
-    
+
     @property
     def chunks(self):
         return []
 
+
 class Word(object):
-    
+
     def __init__(self, sentence, string, tag=None, index=0):
         """ A word with a position in a sentence.
         """
         self.sentence, self.string, self.tag, self.index = sentence, string, tag, index
-    
+
     def __repr__(self):
         return "Word(%s)" % repr(self.string)
-    
+
     def _get_type(self):
         return self.tag
+
     def _set_type(self, v):
         self.tag = v
-        
+
     type = property(_get_type, _set_type)
-    
+
     @property
-    def chunk(self): 
+    def chunk(self):
         return None
-    
+
     @property
     def lemma(self):
         return None
@@ -90,6 +106,7 @@ class Word(object):
 
 WILDCARD = "*"
 regexp = type(re.compile(r"."))
+
 
 def _match(string, pattern):
     """ Returns True if the pattern matches the given word string.
@@ -114,14 +131,16 @@ def _match(string, pattern):
     return False
 
 #--- LIST FUNCTIONS --------------------------------------------------------------------------------
-# Search patterns can contain optional constraints, 
+# Search patterns can contain optional constraints,
 # so we need to find all possible variations of a pattern.
+
 
 def unique(iterable):
     """ Returns a list copy in which each item occurs only once (in-order).
     """
     seen = set()
     return [x for x in iterable if x not in seen and not seen.add(x)]
+
 
 def find(function, iterable):
     """ Returns the first item in the list for which function(item) is True, None otherwise.
@@ -130,9 +149,11 @@ def find(function, iterable):
         if function(x) is True:
             return x
 
+
 def combinations(iterable, n):
     # Backwards compatibility.
     return product(iterable, repeat=n)
+
 
 def product(*args, **kwargs):
     """ Yields all permutations with replacement:
@@ -153,9 +174,11 @@ def product(*args, **kwargs):
     for p in p:
         yield tuple(p)
 
-try: from itertools import product
+try:
+    from itertools import product
 except:
     pass
+
 
 def variations(iterable, optional=lambda x: False):
     """ Returns all possible variations of a sequence with optional items.
@@ -174,16 +197,18 @@ def variations(iterable, optional=lambda x: False):
     for p in product([False, True], repeat=sum(o)):
         p = list(p)
         v = [b and (b and p.pop(0)) for b in o]
-        v = tuple(iterable[i] for i in xrange(len(v)) if not v[i])
+        v = tuple(iterable[i] for i in range(len(v)) if not v[i])
         a.add(v)
     # Longest-first.
-    return sorted(a, cmp=lambda x, y: len(y) - len(x))
+    f = lambda x, y: len(y) - len(x)
+    return sorted(a, key=cmp_to_key(f))
 
 #### TAXONOMY ######################################################################################
 
 #--- ORDERED DICTIONARY ----------------------------------------------------------------------------
-# A taxonomy is based on an ordered dictionary 
+# A taxonomy is based on an ordered dictionary
 # (i.e., if a taxonomy term has multiple parents, the most recent parent is the default).
+
 
 class odict(dict):
 
@@ -193,21 +218,21 @@ class odict(dict):
         dict.__init__(self)
         self._o = [] # List of ordered keys.
         if isinstance(items, dict):
-            items = reversed(items.items())
+            items = reversed(list(items.items()))
         for k, v in items:
             self.__setitem__(k, v)
-        
+
     @classmethod
     def fromkeys(cls, keys=[], v=None):
         return cls((k, v) for k in keys)
-    
-    def push(self, (k, v)):
+
+    def push(self, kv):
         """ Adds a new item from the given (key, value)-tuple.
             If the key exists, pushes the updated item to the head of the dict.
         """
-        if k in self: 
-            self.__delitem__(k)
-        self.__setitem__(k, v)
+        if kv[0] in self:
+            self.__delitem__(kv[0])
+        self.__setitem__(kv[0], kv[1])
     append = push
 
     def __iter__(self):
@@ -217,61 +242,68 @@ class odict(dict):
         if k not in self:
             self._o.append(k)
         dict.__setitem__(self, k, v)
-        
+
     def __delitem__(self, k):
         self._o.remove(k)
         dict.__delitem__(self, k)
 
     def update(self, d):
-        for k, v in reversed(d.items()): 
+        for k, v in reversed(list(d.items())):
             self.__setitem__(k, v)
-        
+
     def setdefault(self, k, v=None):
-        if not k in self: 
+        if k not in self:
             self.__setitem__(k, v)
-        return self[k]        
+        return self[k]
 
     def pop(self, k, *args, **kwargs):
         if k in self:
             self._o.remove(k)
         return dict.pop(self, k, *args, **kwargs)
-        
+
     def popitem(self):
-        k=self._o[-1] if self._o else None; return (k, self.pop(k))
-        
+        k = self._o[-1] if self._o else None
+        return (k, self.pop(k))
+
     def clear(self):
-        self._o=[]; dict.clear(self)
+        self._o = []
+        dict.clear(self)
 
     def iterkeys(self):
         return reversed(self._o)
-    def itervalues(self):
-        return itertools.imap(self.__getitem__, reversed(self._o))
-    def iteritems(self):
-        return itertools.izip(self.keys(), self.values())
 
-    def keys(self): 
+    def itervalues(self):
+        return map(self.__getitem__, reversed(self._o))
+
+    def iteritems(self):
+        return iter(zip(self.iterkeys(), self.itervalues()))
+
+    def keys(self):
         return list(self.iterkeys())
+
     def values(self):
         return list(self.itervalues())
-    def items(self): 
+
+    def items(self):
         return list(self.iteritems())
-    
+
     def copy(self):
-        return self.__class__(reversed(self.items()))
-    
+        return self.__class__(reversed(list(self.items())))
+
     def __repr__(self):
         return "{%s}" % ", ".join("%s: %s" % (repr(k), repr(v)) for k, v in self.items())
 
 #--- TAXONOMY --------------------------------------------------------------------------------------
 
+
 class Taxonomy(dict):
-    
+
     def __init__(self):
         """ Hierarchical tree of words classified by semantic type.
             For example: "rose" and "daffodil" can be classified as "flower":
-            taxonomy.append("rose", type="flower")
-            taxonomy.append("daffodil", type="flower")
-            print taxonomy.children("flower")
+            >>> taxonomy.append("rose", type="flower")
+            >>> taxonomy.append("daffodil", type="flower")
+            >>> print(taxonomy.children("flower"))
             Taxonomy terms can be used in a Pattern:
             FLOWER will match "flower" as well as "rose" and "daffodil".
             The taxonomy is case insensitive by default.
@@ -279,9 +311,9 @@ class Taxonomy(dict):
         self.case_sensitive = False
         self._values = {}
         self.classifiers = []
-        
+
     def _normalize(self, term):
-        try: 
+        try:
             return not self.case_sensitive and term.lower() or term
         except: # Not a string.
             return term
@@ -308,14 +340,14 @@ class Taxonomy(dict):
         self.setdefault(term, (odict(), odict()))[0].push((type, True))
         self.setdefault(type, (odict(), odict()))[1].push((term, True))
         self._values[term] = value
-    
+
     def classify(self, term, **kwargs):
         """ Returns the (most recently added) semantic type for the given term ("many" => "quantity").
             If the term is not in the dictionary, try Taxonomy.classifiers.
         """
         term = self._normalize(term)
         if dict.__contains__(self, term):
-            return self[term][0].keys()[-1]
+            return list(self[term][0].keys())[-1]
         # If the term is not in the dictionary, check the classifiers.
         # Returns the first term in the list returned by a classifier.
         for classifier in self.classifiers:
@@ -324,7 +356,7 @@ class Taxonomy(dict):
             v = classifier.parents(term, **kwargs)
             if v:
                 return v[0]
-            
+
     def parents(self, term, recursive=False, **kwargs):
         """ Returns a list of all semantic types for the given term.
             If recursive=True, traverses parents up to the root.
@@ -334,14 +366,15 @@ class Taxonomy(dict):
                 return []
             visited[term], a = True, []
             if dict.__contains__(self, term):
-                a = self[term][0].keys()
+                a = list(self[term][0].keys())
             for classifier in self.classifiers:
                 a.extend(classifier.parents(term, **kwargs) or [])
             if recursive:
-                for w in a: a += dfs(w, recursive, visited, **kwargs)
+                for w in a:
+                    a += dfs(w, recursive, visited, **kwargs)
             return a
         return unique(dfs(self._normalize(term), recursive, {}, **kwargs))
-    
+
     def children(self, term, recursive=False, **kwargs):
         """ Returns all terms of the given semantic type: "quantity" => ["many", "lot", "few", ...]
             If recursive=True, traverses children down to the leaves.
@@ -351,14 +384,15 @@ class Taxonomy(dict):
                 return []
             visited[term], a = True, []
             if dict.__contains__(self, term):
-                a = self[term][1].keys()
+                a = list(self[term][1].keys())
             for classifier in self.classifiers:
                 a.extend(classifier.children(term, **kwargs) or [])
             if recursive:
-                for w in a: a += dfs(w, recursive, visited, **kwargs)
+                for w in a:
+                    a += dfs(w, recursive, visited, **kwargs)
             return a
         return unique(dfs(self._normalize(term), recursive, {}, **kwargs))
-    
+
     def value(self, term, **kwargs):
         """ Returns the value of the given term ("many" => "50-200")
         """
@@ -369,12 +403,12 @@ class Taxonomy(dict):
             v = classifier.value(term, **kwargs)
             if v is not None:
                 return v
-        
+
     def remove(self, term):
         if dict.__contains__(self, term):
             for w in self.parents(term):
                 self[w][1].pop(term)
-            dict.pop(self, term) 
+            dict.pop(self, term)
 
 # Global taxonomy:
 TAXONOMY = taxonomy = Taxonomy()
@@ -382,17 +416,18 @@ TAXONOMY = taxonomy = Taxonomy()
 #taxonomy.append("rose", type="flower")
 #taxonomy.append("daffodil", type="flower")
 #taxonomy.append("flower", type="plant")
-#print taxonomy.classify("rose")
-#print taxonomy.children("plant", recursive=True)
+#print(taxonomy.classify("rose"))
+#print(taxonomy.children("plant", recursive=True))
 
 #c = Classifier(parents=lambda term: term.endswith("ness") and ["quality"] or [])
 #taxonomy.classifiers.append(c)
-#print taxonomy.classify("roughness")
+#print(taxonomy.classify("roughness"))
 
 #--- TAXONOMY CLASSIFIER ---------------------------------------------------------------------------
 
+
 class Classifier(object):
-    
+
     def __init__(self, parents=lambda term: [], children=lambda term: [], value=lambda term: None):
         """ A classifier uses a rule-based approach to enrich the taxonomy, for example:
             c = Classifier(parents=lambda term: term.endswith("ness") and ["quality"] or [])
@@ -401,41 +436,44 @@ class Classifier(object):
             This is much shorter than manually adding "roughness", "sharpness", ...
             Other examples of useful classifiers: calling en.wordnet.Synset.hyponyms() or en.number().
         """
-        self.parents  = parents
+        self.parents = parents
         self.children = children
-        self.value    = value
+        self.value = value
 
 # Classifier(parents=lambda word: word.endswith("ness") and ["quality"] or [])
 # Classifier(parents=lambda word, chunk=None: chunk=="VP" and [ACTION] or [])
 
+
 class WordNetClassifier(Classifier):
-    
+
     def __init__(self, wordnet=None):
         if wordnet is None:
-            try: from pattern.en import wordnet
+            try:
+                from pattern.en import wordnet
             except:
-                try: from en import wordnet
+                try:
+                    from .en import wordnet
                 except:
                     pass
         Classifier.__init__(self, self._parents, self._children)
         self.wordnet = wordnet
 
     def _children(self, word, pos="NN"):
-        try: 
+        try:
             return [w.synonyms[0] for w in self.wordnet.synsets(word, pos[:2])[0].hyponyms()]
         except:
             pass
-        
+
     def _parents(self, word, pos="NN"):
-        try: 
+        try:
             return [w.synonyms[0] for w in self.wordnet.synsets(word, pos[:2])[0].hypernyms()]
         except:
             pass
 
 #from en import wordnet
 #taxonomy.classifiers.append(WordNetClassifier(wordnet))
-#print taxonomy.parents("ponder", pos="VB")
-#print taxonomy.children("computer")
+#print(taxonomy.parents("ponder", pos="VB"))
+#print(taxonomy.children("computer"))
 
 #### PATTERN #######################################################################################
 
@@ -443,18 +481,19 @@ class WordNetClassifier(Classifier):
 
 # Allowed chunk, role and part-of-speech tags (Penn Treebank II):
 CHUNKS = dict.fromkeys(["NP", "PP", "VP", "ADVP", "ADJP", "SBAR", "PRT", "INTJ"], True)
-ROLES  = dict.fromkeys(["SBJ", "OBJ", "PRD", "TMP", "CLR", "LOC", "DIR", "EXT", "PRP"], True)
-TAGS   = dict.fromkeys(["CC", "CD", "CJ", "DT", "EX", "FW", "IN", "JJ", "JJR", "JJS", "JJ*", 
-                        "LS", "MD", "NN", "NNS", "NNP", "NNPS", "NN*", "NO", "PDT", "PR", 
-                        "PRP", "PRP$", "PR*", "PRP*", "PT", "RB", "RBR", "RBS", "RB*", "RP", 
-                        "SYM", "TO", "UH", "VB", "VBZ", "VBP", "VBD", "VBN", "VBG", "VB*", 
+ROLES = dict.fromkeys(["SBJ", "OBJ", "PRD", "TMP", "CLR", "LOC", "DIR", "EXT", "PRP"], True)
+TAGS = dict.fromkeys(["CC", "CD", "CJ", "DT", "EX", "FW", "IN", "JJ", "JJR", "JJS", "JJ*",
+                        "LS", "MD", "NN", "NNS", "NNP", "NNP*", "NNPS", "NN*", "NO", "PDT", "PR",
+                        "PRP", "PRP$", "PR*", "PRP*", "PT", "RB", "RBR", "RBS", "RB*", "RP",
+                        "SYM", "TO", "UH", "VB", "VBZ", "VBP", "VBD", "VBN", "VBG", "VB*",
                         "WDT", "WP*", "WRB", "X", ".", ",", ":", "(", ")"], True)
 
 ALPHA = re.compile("[a-zA-Z]")
 has_alpha = lambda string: ALPHA.match(string) is not None
 
+
 class Constraint(object):
-    
+
     def __init__(self, words=[], tags=[], chunks=[], roles=[], taxa=[], optional=False, multiple=False, first=False, taxonomy=TAXONOMY, exclude=None, custom=None):
         """ A range of words, tags and taxonomy terms that matches certain words in a sentence.        
             For example: 
@@ -475,7 +514,7 @@ class Constraint(object):
         self.first    = first
         self.exclude  = exclude      # Constraint of words that are *not* allowed, or None.
         self.custom   = custom       # Custom function(Word) returns True if word matches constraint.
-        
+
     @classmethod
     def fromstring(cls, s, **kwargs):
         """ Returns a new Constraint from the given string.
@@ -501,7 +540,7 @@ class Constraint(object):
             # Wrapping order of control characters is ignored:
             # (NN+) == (NN)+ == NN?+ == NN+? == [NN+?] == [NN]+?
             if s.startswith("^"):
-                s = s[1:  ]; C.first = True
+                s = s[1:]; C.first = True
             if s.endswith("+") and not s.endswith("\+"):
                 s = s[0:-1]; C.multiple = True
             if s.endswith("?") and not s.endswith("\?"):
@@ -513,7 +552,7 @@ class Constraint(object):
         s = re.sub(r"^\\\^", "^", s)
         s = re.sub(r"\\\+$", "+", s)
         s = s.replace("\_", "&uscore;")
-        s = s.replace("_"," ")
+        s = s.replace("_", " ")
         s = s.replace("&uscore;", "_")
         s = s.replace("&lparen;", "(")
         s = s.replace("&rparen;", ")")
@@ -522,13 +561,13 @@ class Constraint(object):
         s = s.replace("&lcurly;", "{")
         s = s.replace("&rcurly;", "}")
         s = s.replace("\(", "(")
-        s = s.replace("\)", ")") 
+        s = s.replace("\)", ")")
         s = s.replace("\[", "[")
-        s = s.replace("\]", "]") 
+        s = s.replace("\]", "]")
         s = s.replace("\{", "{")
-        s = s.replace("\}", "}") 
+        s = s.replace("\}", "}")
         s = s.replace("\*", "*")
-        s = s.replace("\?", "?")    
+        s = s.replace("\?", "?")
         s = s.replace("\+", "+")
         s = s.replace("\^", "^")
         s = s.replace("\|", "&vdash;")
@@ -537,7 +576,7 @@ class Constraint(object):
         for v in s:
             C._append(v)
         return C
-        
+
     def _append(self, v):
         if v.startswith("!") and self.exclude is None:
             self.exclude = Constraint()
@@ -560,14 +599,14 @@ class Constraint(object):
             # However, this also matches "*" or "?" or "0.25".
             # Unless such punctuation is defined in the taxonomy, it is added to Range.words.
             self.words.append(v.lower())
-    
+
     def match(self, word):
         """ Return True if the given Word is part of the constraint:
             - the word (or lemma) occurs in Constraint.words, OR
             - the word (or lemma) occurs in Constraint.taxa taxonomy tree, AND
             - the word and/or chunk tags match those defined in the constraint.
             Individual terms in Constraint.words or the taxonomy can contain wildcards (*).
-            Some part-of-speech-tags can also contain wildcards: NN*, VB*, JJ*, RB*
+            Some part-of-speech-tags can also contain wildcards: NN*, VB*, JJ*, RB*, PR*.
             If the given word contains spaces (e.g., proper noun),
             the entire chunk will also be compared.
             For example: Constraint(words=["Mac OS X*"]) 
@@ -609,17 +648,20 @@ class Constraint(object):
                 try:
                     if " " in w and (s1 in w or s2 and s2 in w or "*" in w):
                         s1 = word.chunk and word.chunk.string.lower() or s1
-                        s2 = word.chunk and " ".join([x or "" for x in word.chunk.lemmata]) or s2
-                except:
+                        s2 = word.chunk and " ".join(x or "" for x in word.chunk.lemmata) or s2
+                except Exception as e:
                     s1 = s1
                     s2 = None
                 # Compare the word to the allowed words (which can contain wildcards).
                 if _match(s1, w):
-                    b=True; break
+                    b = True
+                    break
                 # Compare the word lemma to the allowed words, e.g.,
                 # if "was" is not in the constraint, perhaps "be" is, which is a good match.
                 if s2 and _match(s2, w):
-                    b=True; break
+                    b = True
+                    break
+
         # If the constraint defines allowed taxonomy terms,
         # and the given word did not match an allowed word, traverse the taxonomy.
         # The search goes up from the given word to its parents in the taxonomy.
@@ -638,21 +680,22 @@ class Constraint(object):
                         s = s.lower()
                     # Compare ancestors of the word to each term in Constraint.taxa.
                     for p in self.taxonomy.parents(s, recursive=True):
-                        if find(lambda s: p==s, self.taxa): # No wildcards.
+                        if find(lambda s: p == s, self.taxa): # No wildcards.
                             return True
         return b
-    
+
     def __repr__(self):
         s = []
-        for k,v in (
+        for k, v in (
           ( "words", self.words),
           (  "tags", self.tags),
           ("chunks", self.chunks),
           ( "roles", self.roles),
           (  "taxa", self.taxa)):
-            if v: s.append("%s=%s" % (k, repr(v)))
+            if v:
+                s.append("%s=%s" % (k, repr(v)))
         return "Constraint(%s)" % ", ".join(s)
-            
+
     @property
     def string(self):
         a = self.words + self.tags + self.chunks + self.roles + [w.upper() for w in self.taxa]
@@ -660,7 +703,7 @@ class Constraint(object):
         a = (s.replace("\\*", "*") for s in a)
         a = [s.replace(" ", "_") for s in a]
         if self.exclude:
-            a.extend("!"+s for s in self.exclude.string[1:-1].split("|"))
+            a.extend("!" + s for s in self.exclude.string[1:-1].split("|"))
         return (self.optional and "%s(%s)%s" or "%s[%s]%s") % (
             self.first and "^" or "", "|".join(a), self.multiple and "+" or "")
 
@@ -669,8 +712,9 @@ class Constraint(object):
 STRICT = "strict"
 GREEDY = "greedy"
 
+
 class Pattern(object):
-    
+
     def __init__(self, sequence=[], *args, **kwargs):
         """ A sequence of constraints that matches certain phrases in a sentence.
             The given list of Constraint objects can contain nested lists (groups).
@@ -684,29 +728,32 @@ class Pattern(object):
                         groups.append(list(_ungroup(v, groups=None)))
                     for v in _ungroup(v, groups):
                         yield v
-                else: 
+                else:
                     yield v
         self.groups = []
         self.sequence = list(_ungroup(sequence, groups=self.groups))
         # Assign Constraint.index:
         i = 0
         for constraint in self.sequence:
-            constraint.index = i; i+=1
+            constraint.index = i
+            i += 1
         # There are two search modes: STRICT and GREEDY.
         # - In STRICT, "rabbit" matches only the string "rabbit".
         # - In GREEDY, "rabbit|NN" matches the string "rabbit" tagged "NN".
         # - In GREEDY, "rabbit" matches "the big white rabbit" (the entire chunk is a match).
         # - Pattern.greedy(chunk, constraint) determines (True/False) if a chunk is a match.
-        self.strict = kwargs.get("strict", STRICT in args and not GREEDY in args)
+        self.strict = kwargs.get("strict", STRICT in args and GREEDY not in args)
         self.greedy = kwargs.get("greedy", lambda chunk, constraint: True)
-        
+
     def __iter__(self):
         return iter(self.sequence)
+
     def __len__(self):
         return len(self.sequence)
+
     def __getitem__(self, i):
         return self.sequence[i]
-        
+
     @classmethod
     def fromstring(cls, s, *args, **kwargs):
         """ Returns a new Pattern from the given string.
@@ -725,18 +772,18 @@ class Pattern(object):
             # Spaces in a range encapsulated in square brackets are encoded.
             # "[Windows Vista]" is one range, don't split on space.
             p.append(s[i:m.start()])
-            p.append(s[m.start():m.end()].replace(" ", "&space;")); i=m.end()
+            p.append(s[m.start():m.end()].replace(" ", "&space;")); i = m.end()
         p.append(s[i:])
-        s = "".join(p) 
+        s = "".join(p)
         s = s.replace("][", "] [")
         s = s.replace(")(", ") (")
         s = s.replace("\|", "&vdash;")
-        s = re.sub(r"\s+\|\s+", "|", s)  
+        s = re.sub(r"\s+\|\s+", "|", s)
         s = re.sub(r"\s+", " ", s)
         s = re.sub(r"\{\s+", "{", s)
         s = re.sub(r"\s+\}", "}", s)
         s = s.split(" ")
-        s = [v.replace("&space;"," ") for v in s]
+        s = [v.replace("&space;", " ") for v in s]
         P = cls([], *args, **kwargs)
         G, O, i = [], [], 0
         for s in s:
@@ -749,16 +796,19 @@ class Pattern(object):
             # Insert groups in opened-first order (i).
             while s.startswith("{"):
                 s = s[1:]
-                G.append((i, [])); i+=1
+                G.append((i, []))
+                i += 1
                 O.append([])
             for g in G:
                 g[1].append(constraint)
             while s.endswith("}"):
                 s = s[:-1]
-                if G: O[G[-1][0]] = G[-1][1]; G.pop()
+                if G:
+                    O[G[-1][0]] = G[-1][1]
+                    G.pop()
         P.groups = [g for g in O if g]
         return P
-        
+
     def scan(self, string):
         """ Returns True if search(Sentence(string)) may yield matches.
             If is often faster to scan prior to creating a Sentence and searching it.
@@ -770,7 +820,7 @@ class Pattern(object):
         #         s = Sentence(s)
         #         m = p.search(s)
         #         if m:
-        #             print m
+        #             print(m)
         w = (constraint.words for constraint in self.sequence if not constraint.optional)
         w = itertools.chain(*w)
         w = [w.strip(WILDCARD) for w in w if WILDCARD not in w[1:-1]]
@@ -781,24 +831,36 @@ class Pattern(object):
     def search(self, sentence):
         """ Returns a list of all matches found in the given sentence.
         """
-        if isinstance(sentence, list) or sentence.__class__.__name__ == "Text":
-            a=[]; [a.extend(self.search(s)) for s in sentence]; return a
+        if sentence.__class__.__name__ == "Sentence":
+            pass
+        elif isinstance(sentence, list) or sentence.__class__.__name__ == "Text":
+            a = []
+            [a.extend(self.search(s)) for s in sentence]
+            return a
+        elif isinstance(sentence, str):
+            sentence = Sentence(sentence)
+        elif isinstance(sentence, Match) and len(sentence) > 0:
+            sentence = sentence[0].sentence.slice(sentence[0].index, sentence[-1].index + 1)
         a = []
         v = self._variations()
         u = {}
         m = self.match(sentence, _v=v)
         while m:
             a.append(m)
-            m = self.match(sentence, start=m.words[-1].index+1, _v=v, _u=u)
+            m = self.match(sentence, start=m.words[-1].index + 1, _v=v, _u=u)
         return a
-    
+
     def match(self, sentence, start=0, _v=None, _u=None):
         """ Returns the first match found in the given sentence, or None.
         """
-        if isinstance(sentence, list) or sentence.__class__.__name__ == "Text":
-            return find(lambda (m,s): m is not None, ((self.match(s, start, _v), s) for s in sentence))[0]
-        if isinstance(sentence, basestring):
+        if sentence.__class__.__name__ == "Sentence":
+            pass
+        elif isinstance(sentence, list) or sentence.__class__.__name__ == "Text":
+            return find(lambda m: m is not None, (self.match(s, start, _v) for s in sentence))
+        elif isinstance(sentence, str):
             sentence = Sentence(sentence)
+        elif isinstance(sentence, Match) and len(sentence) > 0:
+            sentence = sentence[0].sentence.slice(sentence[0].index, sentence[-1].index + 1)
         # Variations (_v) further down the list may match words more to the front.
         # We need to check all of them. Unmatched variations are blacklisted (_u).
         # Pattern.search() calls Pattern.match() with a persistent blacklist (1.5x faster).
@@ -815,13 +877,13 @@ class Pattern(object):
                 _u[id(sequence)] = False
         # Return the leftmost-longest.
         if len(a) > 0:
-            return sorted(a)[0][-1]
+            return sorted(a, key = lambda x: (x[0], -x[1]))[0][-1]
 
     def _variations(self):
         v = variations(self.sequence, optional=lambda constraint: constraint.optional)
         v = sorted(v, key=len, reverse=True)
         return v
-                
+
     def _match(self, sequence, sentence, start=0, i=0, w0=None, map=None, d=0):
         # Backtracking tree search.
         # Finds the first match in the sentence of the given sequence of constraints.
@@ -830,19 +892,19 @@ class Pattern(object):
         #    w0 : the first word that matches a constraint.
         #   map : a dictionary of (Word index, Constraint) items.
         #     d : recursion depth.
-        
+
         # XXX - We can probably rewrite all of this using (faster) regular expressions.
-        
+
         if map is None:
             map = {}
-            
+
         n = len(sequence)
-            
+
         # --- MATCH ----------
         if i == n:
             if w0 is not None:
-                w1 = sentence.words[start-1]
-                # Greedy algorithm: 
+                w1 = sentence.words[start - 1]
+                # Greedy algorithm:
                 # - "cat" matches "the big cat" if "cat" is head of the chunk.
                 # - "Tom" matches "Tom the cat" if "Tom" is head of the chunk.
                 # - This behavior is ignored with POS-tag constraints:
@@ -862,11 +924,11 @@ class Pattern(object):
                                     return None
                 w0, w1 = w01
                 # Update map for optional chunk words (see below).
-                words = sentence.words[w0.index:w1.index+1]
+                words = sentence.words[w0.index:w1.index + 1]
                 for w in words:
                     if w.index not in map and w.chunk:
                         wx = find(lambda w: w.index in map, reversed(w.chunk.words))
-                        if wx: 
+                        if wx:
                             map[w.index] = map[wx.index]
                 # Return matched word range, we'll need the map to build Match.constituents().
                 return Match(self, words, map)
@@ -875,18 +937,18 @@ class Pattern(object):
         # --- RECURSION --------
         constraint = sequence[i]
         for w in sentence.words[start:]:
-            #print " "*d, "match?", w, sequence[i].string # DEBUG
+            #print(" "*d, "match?", w, sequence[i].string) # DEBUG
             if i < n and constraint.match(w):
-                #print " "*d, "match!", w, sequence[i].string # DEBUG
+                #print(" "*d, "match!", w, sequence[i].string) # DEBUG
                 map[w.index] = constraint
                 if constraint.multiple:
                     # Next word vs. same constraint if Constraint.multiple=True.
-                    m = self._match(sequence, sentence, w.index+1, i, w0 or w, map, d+1)
-                    if m: 
+                    m = self._match(sequence, sentence, w.index + 1, i, w0 or w, map, d + 1)
+                    if m:
                         return m
                 # Next word vs. next constraint.
-                m = self._match(sequence, sentence, w.index+1, i+1, w0 or w, map, d+1)
-                if m: 
+                m = self._match(sequence, sentence, w.index + 1, i + 1, w0 or w, map, d + 1)
+                if m:
                     return m
             # Chunk words other than the head are optional:
             # - Pattern.fromstring("cat") matches "cat" but also "the big cat" (overspecification).
@@ -900,60 +962,69 @@ class Pattern(object):
                 break
             if w0 and constraint.exclude and constraint.exclude.tags:
                 break
-                
+
     @property
     def string(self):
         return " ".join(constraint.string for constraint in self.sequence)
 
 _cache = {}
 _CACHE_SIZE = 100 # Number of dynamic Pattern objects to keep in cache.
+
+
 def compile(pattern, *args, **kwargs):
     """ Returns a Pattern from the given string or regular expression.
-        Recently compiled patterns are kept in cache.
+        Recently compiled patterns are kept in cache
+        (if they do not use taxonomies, which are mutable dicts).
     """
     id, p = repr(pattern) + repr(args), pattern
-    if id in _cache:
+    if id in _cache and not kwargs:
         return _cache[id]
-    if isinstance(pattern, basestring):
+    if isinstance(pattern, str):
         p = Pattern.fromstring(pattern, *args, **kwargs)
     if isinstance(pattern, regexp):
         p = Pattern([Constraint(words=[pattern], taxonomy=kwargs.get("taxonomy", TAXONOMY))], *args, **kwargs)
     if len(_cache) > _CACHE_SIZE:
         _cache.clear()
-    if isinstance(p, Pattern):
+    if isinstance(p, Pattern) and not kwargs:
         _cache[id] = p
+    if isinstance(p, Pattern):
         return p
     else:
-        raise TypeError, "can't compile '%s' object" % pattern.__class__.__name__
+        raise TypeError("can't compile '%s' object" % pattern.__class__.__name__)
+
 
 def scan(pattern, string, *args, **kwargs):
     """ Returns True if pattern.search(Sentence(string)) may yield matches.
         If is often faster to scan prior to creating a Sentence and searching it.
     """
-    return compile(pattern, *args, **kwargs).scan(string) 
+    return compile(pattern, *args, **kwargs).scan(string)
+
 
 def match(pattern, sentence, *args, **kwargs):
     """ Returns the first match found in the given sentence, or None.
     """
-    return compile(pattern, *args, **kwargs).match(sentence) 
+    return compile(pattern, *args, **kwargs).match(sentence)
+
 
 def search(pattern, sentence, *args, **kwargs):
     """ Returns a list of all matches found in the given sentence.
     """
     return compile(pattern, *args, **kwargs).search(sentence)
 
+
 def escape(string):
     """ Returns the string with control characters for Pattern syntax escaped.
         For example: "hello!" => "hello\!".
     """
-    for ch in ("{","}","[","]","(",")","_","|","!","*","+","^"):
-        string = string.replace(ch, "\\"+ch)
+    for ch in ("{", "}", "[", "]", "(", ")", "_", "|", "!", "*", "+", "^"):
+        string = string.replace(ch, "\\" + ch)
     return string
 
 #--- PATTERN MATCH ---------------------------------------------------------------------------------
 
+
 class Match(object):
-    
+
     def __init__(self, pattern, words=[], map={}):
         """ Search result returned from Pattern.match(sentence),
             containing a sequence of Word objects.
@@ -964,36 +1035,40 @@ class Match(object):
         self._map2 = dict() # Constraint index to list of Word indices.
         for w in self.words:
             self._map1[w.index] = map[w.index]
-        for k,v in self._map1.items():
-            self._map2.setdefault(self.pattern.sequence.index(v),[]).append(k)
-        for k,v in self._map2.items():
+        for k, v in self._map1.items():
+            self._map2.setdefault(self.pattern.sequence.index(v), []).append(k)
+        for k, v in self._map2.items():
             v.sort()
 
     def __len__(self):
         return len(self.words)
+
     def __iter__(self):
         return iter(self.words)
+
     def __getitem__(self, i):
         return self.words.__getitem__(i)
 
     @property
     def start(self):
         return self.words and self.words[0].index or None
+
     @property
     def stop(self):
-        return self.words and self.words[-1].index+1 or None
+        return self.words and self.words[-1].index + 1 or None
 
     def constraint(self, word):
         """ Returns the constraint that matches the given Word, or None.
         """
         if word.index in self._map1:
             return self._map1[word.index]
-    
+
     def constraints(self, chunk):
         """ Returns a list of constraints that match the given Chunk.
         """
         a = [self._map1[w.index] for w in chunk.words if w.index in self._map1]
-        b = []; [b.append(constraint) for constraint in a if constraint not in b]
+        b = []
+        [b.append(constraint) for constraint in a if constraint not in b]
         return b
 
     def constituents(self, constraint=None):
@@ -1007,28 +1082,29 @@ class Match(object):
         n = len(self.pattern.sequence)
         if isinstance(constraint, (int, Constraint)):
             if isinstance(constraint, int):
-                i = constraint 
-                i = i<0 and i%n or i
+                i = constraint
+                i = i < 0 and i % n or i
             else:
                 i = self.pattern.sequence.index(constraint)
-            W = self._map2.get(i,[])
-            W = [self.words[i-self.words[0].index] for i in W]            
+            W = self._map2.get(i, [])
+            W = [self.words[i - self.words[0].index] for i in W]
         if isinstance(constraint, (list, tuple)):
-            W = []; [W.extend(self._map2.get(j<0 and j%n or j,[])) for j in constraint]
-            W = [self.words[i-self.words[0].index] for i in W]
+            W = []
+            [W.extend(self._map2.get(j < 0 and j % n or j, [])) for j in constraint]
+            W = [self.words[i - self.words[0].index] for i in W]
             W = unique(W)
         a = []
         i = 0
         while i < len(W):
             w = W[i]
-            if w.chunk and W[i:i+len(w.chunk)] == w.chunk.words:
+            if w.chunk and W[i:i + len(w.chunk)] == w.chunk.words:
                 i += len(w.chunk) - 1
                 a.append(w.chunk)
             else:
                 a.append(w)
             i += 1
         return a
-        
+
     def group(self, index, chunked=False):
         """ Returns a list of Word objects that match the given group.
             With chunked=True, returns a list of Word + Chunk objects - see Match.constituents().
@@ -1036,23 +1112,24 @@ class Match(object):
             search("{JJ JJ} NN", Sentence(parse("big black cat"))).group(1) => big black.
         """
         if index < 0 or index > len(self.pattern.groups):
-            raise IndexError, "no such group"
+            raise IndexError("no such group")
         if index > 0 and index <= len(self.pattern.groups):
-            g = self.pattern.groups[index-1]
+            g = self.pattern.groups[index - 1]
         if index == 0:
             g = self.pattern.sequence
         if chunked is True:
             return Group(self, self.constituents(constraint=[self.pattern.sequence.index(x) for x in g]))
         return Group(self, [w for w in self.words if self.constraint(w) in g])
-    
+
     @property
     def string(self):
         return " ".join(w.string for w in self.words)
-    
+
     def __repr__(self):
         return "Match(words=%s)" % repr(self.words)
 
 #--- PATTERN MATCH GROUP ---------------------------------------------------------------------------
+
 
 class Group(list):
 
@@ -1067,10 +1144,11 @@ class Group(list):
     @property
     def start(self):
         return self and self[0].index or None
+
     @property
     def stop(self):
-        return self and self[-1].index+1 or None
-    
+        return self and self[-1].index + 1 or None
+
     @property
     def string(self):
         return " ".join(w.string for w in self)

@@ -7,59 +7,49 @@
 
 ####################################################################################################
 
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import division
+
+from builtins import str, bytes, dict, int
+from builtins import map, zip, filter
+from builtins import object, range
+
 import os
 import sys
 import re
 import string
 import types
+import json
 import codecs
+import operator
+
+from io import open
+
+from codecs import BOM_UTF8
+BOM_UTF8 = BOM_UTF8.decode('utf-8')
 
 from xml.etree import cElementTree
-from itertools import chain, imap
+from itertools import chain
+from collections import defaultdict
+from math import log, sqrt
 
 try:
     MODULE = os.path.dirname(os.path.realpath(__file__))
 except:
     MODULE = ""
 
-from tree import Tree, Text, Sentence, Slice, Chunk, PNPChunk, Chink, Word, table
-from tree import SLASH, WORD, POS, CHUNK, PNP, REL, ANCHOR, LEMMA, AND, OR
+from pattern.text.tree import Tree, Text, Sentence, Slice, Chunk, PNPChunk, Chink, Word, table
+from pattern.text.tree import SLASH, WORD, POS, CHUNK, PNP, REL, ANCHOR, LEMMA, AND, OR
 
-#--- STRING FUNCTIONS ------------------------------------------------------------------------------
-# Latin-1 (ISO-8859-1) encoding is identical to Windows-1252 except for the code points 128-159:
-# Latin-1 assigns control codes in this range, Windows-1252 has characters, punctuation, symbols
-# assigned to these code points.
+DEFAULT = "default"
 
-def decode_string(v, encoding="utf-8"):
-    """ Returns the given value as a Unicode string (if possible).
-    """
-    if isinstance(encoding, basestring):
-        encoding = ((encoding,),) + (("windows-1252",), ("utf-8", "ignore"))
-    if isinstance(v, str):
-        for e in encoding:
-            try: return v.decode(*e)
-            except:
-                pass
-        return v
-    return unicode(v)
-
-def encode_string(v, encoding="utf-8"):
-    """ Returns the given value as a Python byte string (if possible).
-    """
-    if isinstance(encoding, basestring):
-        encoding = ((encoding,),) + (("windows-1252",), ("utf-8", "ignore"))
-    if isinstance(v, unicode):
-        for e in encoding:
-            try: return v.encode(*e)
-            except:
-                pass
-        return v
-    return str(v)
+from pattern.helpers import encode_string, decode_string
 
 decode_utf8 = decode_string
 encode_utf8 = encode_string
 
-PUNCTUATION = ".,;:!?()[]{}`'\"@#$^&*+-|=~_"
+PUNCTUATION = ".,;:!?()\[]{}`'\"@#$^&*+-|=~_”—“"
 
 def ngrams(string, n=3, punctuation=PUNCTUATION, continuous=False):
     """ Returns a list of n-grams (tuples of n successive words) from the given string.
@@ -71,7 +61,9 @@ def ngrams(string, n=3, punctuation=PUNCTUATION, continuous=False):
         return [w for w in s if (isinstance(w, Word) and w.string or w) not in punctuation]
     if n <= 0:
         return []
-    if isinstance(string, basestring):
+    if isinstance(string, list):
+        s = [strip_punctuation(string)]
+    if isinstance(string, str):
         s = [strip_punctuation(s.split(" ")) for s in tokenize(string)]
     if isinstance(string, Sentence):
         s = [strip_punctuation(string)]
@@ -80,10 +72,249 @@ def ngrams(string, n=3, punctuation=PUNCTUATION, continuous=False):
     if continuous:
         s = [sum(s, [])]
     g = []
-    for s in s:
+
+    for st in s:
         #s = [None] + s + [None]
-        g.extend([tuple(s[i:i+n]) for i in range(len(s)-n+1)])
+        g.extend([tuple(st[i:i + n]) for i in range(len(st) - n + 1)])
     return g
+
+
+def split_document_by_delimeters(string, regexp="[.,!?;: ]", min_word_len=1, stopwords=None):
+    """
+    :param string: input string (text document)
+    :return: list of words
+    """
+    string = re.sub(r"(-\n)", "", string.lower())
+    string = re.sub(r"(\n)", " ", string)
+    words = re.split(regexp, string)
+
+    if not stopwords:
+        stopwords = []
+
+    return [word for word in words if len(word) > min_word_len and word not in stopwords]
+
+
+def train_topmine_ngrammer(documents, threshhold=1, max_ngramm_len=3, min_word_len=2, regexp="[.,!?;: ]", stopwords=None):
+    """
+    :param documents: list of documents, where each document is represented by a string or by a list of prepared words (ex. stemmed)
+    :return: trained ngrammer for text corpus
+    """
+
+    splitted_docs = []
+    for doc in documents:
+        if isinstance(doc, str):
+            splitted_docs.append(split_document_by_delimeters(doc, regexp, min_word_len=min_word_len, stopwords=stopwords))
+        elif isinstance(doc, list):
+            splitted_docs.append(doc)
+        else:
+            print("Wrong document format")
+
+
+    ng = None
+    try:
+        ng = NGrammer(regexp=regexp)
+        ng.frequentPhraseMining(splitted_docs, threshhold=threshhold, max_ngramm_len=max_ngramm_len)
+
+    except Exception:
+        print('Exception occurred while training ngrammer for abstracts')
+
+    return ng
+
+
+def topmine_ngramms(doc, ng, threshhold=1):
+    """
+    :param doc: document from text corpus, represented by a list of words without delimeters
+    :param ng: trained ngramer for text corpus
+    :param threshhold: the hyperparameter
+    :return: dictionary of ngramms
+    """
+    splitted_doc = split_document_by_delimeters(doc, ng.regexp)
+    extracted_terms = ng.ngramm(splitted_doc, threshhold=threshhold)[0]
+    terms_dict = defaultdict(int)
+    for term in extracted_terms:
+        terms_dict[term] += 1
+    return terms_dict
+
+
+class NGrammer(object):
+    _phrase2freq = {}
+    _delimiters = None
+    _delimiters_regex = None
+    _lengthInWords = 0
+
+    def __init__(self, regexp):
+        self._phrase2freq = {}
+        self._delimiters = {}
+        self._delimiters_regex = []
+        self._lengthInWords = 0
+        self.regexp = regexp
+
+    @property
+    def delimiters(self):
+        return self._delimiters
+
+    @delimiters.setter
+    def delimiters(self, value):
+        self._delimiters = value
+
+    @property
+    def delimiters_regex(self):
+        return self._delimiters_regex
+
+    @delimiters_regex.setter
+    def delimiters_regex(self, value):
+        self._delimiters_regex = [re.compile(p) for p in value]
+
+    @property
+    def lengthInWords(self):
+        return self._lengthInWords
+
+    @lengthInWords.setter
+    def lengthInWords(self, value):
+        self._lengthInWords = value
+
+    def frequentPhraseMining(self, document_list, threshhold, max_ngramm_len=10):
+        """ Function for collecting phrases and its frequencies"""
+        n = 1
+        A = {}
+        for doc_id, doc in enumerate(document_list):
+            A[doc_id] = {n: range(len(doc) - 1)}
+            for w in doc:
+                self._phrase2freq.setdefault(w, 0)
+                self._phrase2freq[w] += 1
+        D = set(range(len(document_list)))
+
+        for n in range(2, max_ngramm_len + 1):
+            print("extracting {}-grams".format(n))
+            if not D:
+                break
+            to_remove = []
+            for doc_id in D:
+                doc = document_list[doc_id]
+                A[doc_id][n] = []
+                for i in A[doc_id][n - 1]:
+                    if n == 2:
+                        flag = False
+                        flag2 = False
+                        if doc[i] in self._delimiters:
+                            flag = True
+                        for p in self._delimiters_regex:
+                            if re.match(p, doc[i]):
+                                flag2 = True
+                                break
+                        if not flag2:
+                            self._lengthInWords += 1
+                        if flag or flag2:
+                            continue
+                    ngram = u'_'.join([doc[i + j] for j in range(n - 1)])
+                    if self._phrase2freq.get(ngram, threshhold - 1) >= threshhold:
+                        A[doc_id][n] += [i]
+                if A[doc_id][n]:
+                    A[doc_id][n].remove(A[doc_id][n][-1])
+                if not A[doc_id][n]:
+                    to_remove += [doc_id]
+                else:
+                    for i in A[doc_id][n]:
+                        if i + 1 in A[doc_id][n]:
+                            ngram = u'_'.join([doc[i + j] for j in range(n)])
+                            self._phrase2freq.setdefault(ngram, 0)
+                            self._phrase2freq[ngram] += 1
+            for r in to_remove:
+                D.remove(r)
+
+    def _significanceScore(self, ngramm1, ngramm2):
+        mu0 = float(self._phrase2freq.get(ngramm1, 0) *
+                    self._phrase2freq.get(ngramm2, 0))
+        mu0 /= self._lengthInWords
+        f12 = float(self._phrase2freq.get(ngramm1 + u'_' + ngramm2, 0))
+        return (f12 - mu0) / sqrt(f12 + 1)
+
+    def ngramm(self, token_list, threshhold, indexes=[]):
+        H = []
+        res = [[i] for i in range(len(token_list))]
+        for i in range(len(res) - 1):
+            p1 = u'_'.join([token_list[w_i] for w_i in res[i]])
+            p2 = u'_'.join([token_list[w_i] for w_i in res[i + 1]])
+            score = self._significanceScore(p1, p2)
+            H += [score]
+        while len(res) > 1:
+            Best = max(H)
+            best_ind = H.index(Best)
+            if Best > threshhold:
+                new_res = res[:best_ind]
+                new_res += [res[best_ind] + res[best_ind + 1]]
+                new_res += res[best_ind + 2:]
+
+                if best_ind == 0:
+                    new_H = []
+                else:
+                    new_H = H[:best_ind - 1]
+                    p1 = u'_'.join([token_list[w_i] for w_i in new_res[best_ind - 1]])
+                    p2 = u'_'.join([token_list[w_i] for w_i in new_res[best_ind]])
+                    new_H += [self._significanceScore(p1, p2)]
+                if best_ind != len(new_res) - 1:
+                    p1 = u'_'.join([token_list[w_i] for w_i in new_res[best_ind]])
+                    p2 = u'_'.join([token_list[w_i] for w_i in new_res[best_ind + 1]])
+                    new_H += [self._significanceScore(p1, p2)]
+                new_H += H[best_ind + 2:]
+                H = new_H
+                res = new_res
+            else:
+                break
+        ngrammed_doc = []
+        for ngramm_ind in res:
+            ngrammed_doc.append(u'_'.join([token_list[x] for x in ngramm_ind]))
+
+        new_indexes = []
+        if indexes:
+            for i, ngramm_ind in enumerate(res):
+                new_indexes += []
+                start_ind = indexes[2 * ngramm_ind[0]]
+                length = indexes[2 * ngramm_ind[-1]] + indexes[2 * ngramm_ind[-1] + 1] - start_ind
+                new_indexes += (start_ind, length)
+
+        return ngrammed_doc, new_indexes
+
+    def removeDelimiters(self, ngramm_list, indexes=[]):
+        new_list = []
+        new_indexes = []
+        for i, w in enumerate(ngramm_list):
+            if w in self._delimiters:
+                continue
+            flag = False
+            for ptrn in self._delimiters_regex:
+                if re.match(ptrn, w):
+                    flag = True
+                    break
+            if flag:
+                continue
+            new_list.append(w)
+            if indexes:
+                new_indexes += (indexes[2 * i], indexes[2 * i + 1])
+        return new_list, new_indexes
+
+    def saveAsJson(self, filename, with_delimiters=False):
+        to_save = {u'lengthInWords': self._lengthInWords,
+                   u'phrase2freq': self._phrase2freq}
+        if (with_delimiters):
+            to_save[u'delimiters'] = self._delimiters
+            to_save[u'delimiters_regex'] = [x.pattern for x in self._delimiters_regex]
+        with open(filename, 'w') as fp:
+            json.dump(to_save, fp)
+
+    def loadFromJson(self, filename, with_delimiters=False):
+        with open(filename, 'r') as fp:
+            loaded = json.load(fp)
+        self._lengthInWords = loaded[u'lengthInWords']
+        self._phrase2freq = loaded[u'phrase2freq']
+        if (with_delimiters):
+            self._delimiters = loaded[u'delimiters']
+            self._delimiters_regex = [re.compile(p) for p in loaded[u'delimiters_regex']]
+
+
+
+FLOODING = re.compile(r"((.)\2{2,})", re.I) # ooo, xxx, !!!, ...
+
 
 def deflood(s, n=3):
     """ Returns the string with no more than n repeated characters, e.g.,
@@ -92,22 +323,35 @@ def deflood(s, n=3):
     """
     if n == 0:
         return s[0:0]
-    return re.sub(r"((.)\2{%s,})" % (n-1), lambda m: m.group(1)[0] * n, s)
+    return re.sub(r"((.)\2{%s,})" % (n - 1), lambda m: m.group(1)[0] * n, s)
+
+
+def decamel(s, separator="_"):
+    """ Returns the string with CamelCase converted to underscores, e.g.,
+        decamel("TomDeSmedt", "-") => "tom-de-smedt"
+        decamel("getHTTPResponse2) => "get_http_response2"
+    """
+    s = re.sub(r"([a-z0-9])([A-Z])", "\\1%s\\2" % separator, s)
+    s = re.sub(r"([A-Z])([A-Z][a-z])", "\\1%s\\2" % separator, s)
+    s = s.lower()
+    return s
+
 
 def pprint(string, token=[WORD, POS, CHUNK, PNP], column=4):
     """ Pretty-prints the output of Parser.parse() as a table with outlined columns.
         Alternatively, you can supply a tree.Text or tree.Sentence object.
     """
-    if isinstance(string, basestring):
-        print "\n\n".join([table(sentence, fill=column) for sentence in Text(string, token)])
+    if isinstance(string, str):
+        print("\n\n".join([table(sentence, fill=column) for sentence in Text(string, token)]))
     if isinstance(string, Text):
-        print "\n\n".join([table(sentence, fill=column) for sentence in string])
+        print("\n\n".join([table(sentence, fill=column) for sentence in string]))
     if isinstance(string, Sentence):
-        print table(string, fill=column)
+        print(table(string, fill=column))
 
 #--- LAZY DICTIONARY -------------------------------------------------------------------------------
 # A lazy dictionary is empty until one of its methods is called.
 # This way many instances (e.g., lexicons) can be created without using memory until used.
+
 
 class lazydict(dict):
 
@@ -127,32 +371,51 @@ class lazydict(dict):
 
     def __repr__(self):
         return self._lazy("__repr__")
+
     def __len__(self):
         return self._lazy("__len__")
+
     def __iter__(self):
         return self._lazy("__iter__")
+
     def __contains__(self, *args):
         return self._lazy("__contains__", *args)
+
     def __getitem__(self, *args):
         return self._lazy("__getitem__", *args)
+
     def __setitem__(self, *args):
         return self._lazy("__setitem__", *args)
+
+    def __delitem__(self, *args):
+        return self._lazy("__delitem__", *args)
+
     def setdefault(self, *args):
         return self._lazy("setdefault", *args)
+
     def get(self, *args, **kwargs):
         return self._lazy("get", *args)
+
     def items(self):
         return self._lazy("items")
+
     def keys(self):
         return self._lazy("keys")
+
     def values(self):
         return self._lazy("values")
+
     def update(self, *args):
         return self._lazy("update", *args)
+
     def pop(self, *args):
         return self._lazy("pop", *args)
+
     def popitem(self, *args):
         return self._lazy("popitem", *args)
+
+#--- LAZY LIST -------------------------------------------------------------------------------------
+
 
 class lazylist(list):
 
@@ -172,22 +435,143 @@ class lazylist(list):
 
     def __repr__(self):
         return self._lazy("__repr__")
+
     def __len__(self):
         return self._lazy("__len__")
+
     def __iter__(self):
         return self._lazy("__iter__")
+
     def __contains__(self, *args):
         return self._lazy("__contains__", *args)
+
+    def __getitem__(self, *args):
+        return self._lazy("__getitem__", *args)
+
+    def __setitem__(self, *args):
+        return self._lazy("__setitem__", *args)
+
+    def __delitem__(self, *args):
+        return self._lazy("__delitem__", *args)
+
     def insert(self, *args):
         return self._lazy("insert", *args)
+
     def append(self, *args):
         return self._lazy("append", *args)
+
     def extend(self, *args):
         return self._lazy("extend", *args)
+
     def remove(self, *args):
         return self._lazy("remove", *args)
+
     def pop(self, *args):
         return self._lazy("pop", *args)
+
+    def index(self, *args):
+        return self._lazy("index", *args)
+
+    def count(self, *args):
+        return self._lazy("count", *args)
+
+#--- LAZY SET --------------------------------------------------------------------------------------
+
+
+class lazyset(set):
+
+    def load(self):
+        # Must be overridden in a subclass.
+        # Must load data with list.append(self, v) instead of lazylist.append(v).
+        pass
+
+    def _lazy(self, method, *args):
+        """ If the list is empty, calls lazylist.load().
+            Replaces lazylist.method() with list.method() and calls it.
+        """
+        print("!")
+        if set.__len__(self) == 0:
+            self.load()
+            setattr(self, method, types.MethodType(getattr(set, method), self))
+        return getattr(set, method)(self, *args)
+
+    def __repr__(self):
+        return self._lazy("__repr__")
+
+    def __len__(self):
+        return self._lazy("__len__")
+
+    def __iter__(self):
+        return self._lazy("__iter__")
+
+    def __contains__(self, *args):
+        return self._lazy("__contains__", *args)
+
+    def __sub__(self, *args):
+        return self._lazy("__sub__", *args)
+
+    def __and__(self, *args):
+        return self._lazy("__and__", *args)
+
+    def __or__(self, *args):
+        return self._lazy("__or__", *args)
+
+    def __xor__(self, *args):
+        return self._lazy("__xor__", *args)
+
+    def __isub__(self, *args):
+        return self._lazy("__isub__", *args)
+
+    def __iand__(self, *args):
+        return self._lazy("__iand__", *args)
+
+    def __ior__(self, *args):
+        return self._lazy("__ior__", *args)
+
+    def __ixor__(self, *args):
+        return self._lazy("__ixor__", *args)
+
+    def __gt__(self, *args):
+        return self._lazy("__gt__", *args)
+
+    def __lt__(self, *args):
+        return self._lazy("__lt__", *args)
+
+    def __gte__(self, *args):
+        return self._lazy("__gte__", *args)
+
+    def __lte__(self, *args):
+        return self._lazy("__lte__", *args)
+
+    def add(self, *args):
+        return self._lazy("add", *args)
+
+    def pop(self, *args):
+        return self._lazy("pop", *args)
+
+    def remove(self, *args):
+        return self._lazy("remove", *args)
+
+    def discard(self, *args):
+        return self._lazy("discard", *args)
+
+    def isdisjoint(self, *args):
+        return self._lazy("isdisjoint", *args)
+
+    def issubset(self, *args):
+        return self._lazy("issubset", *args)
+
+    def issuperset(self, *args):
+        return self._lazy("issuperset", *args)
+
+    def union(self, *args):
+        return self._lazy("union", *args)
+
+    def intersection(self, *args):
+        return self._lazy("intersection", *args)
+
+    def difference(self, *args):
+        return self._lazy("difference", *args)
 
 #### PARSER ########################################################################################
 # Pattern's text parsers are based on Brill's algorithm, or optionally on a trained language model.
@@ -200,28 +584,30 @@ class lazylist(list):
 
 #--- LEXICON ---------------------------------------------------------------------------------------
 
+
 def _read(path, encoding="utf-8", comment=";;;"):
     """ Returns an iterator over the lines in the file at the given path,
         strippping comments and decoding each line to Unicode.
     """
     if path:
-        if isinstance(path, basestring) and os.path.exists(path):
+        if isinstance(path, str) and os.path.exists(path):
             # From file path.
-            f = open(path, "rb")
-        elif isinstance(path, basestring):
+            f = open(path, "r", encoding="utf-8")
+        elif isinstance(path, str):
             # From string.
             f = path.splitlines()
         else:
             # From file or buffer.
             f = path
         for i, line in enumerate(f):
-            line = line.strip(codecs.BOM_UTF8) if i == 0 and isinstance(line, str) else line
+            line = line.strip(BOM_UTF8) if i == 0 and isinstance(line, str) else line
             line = line.strip()
             line = decode_utf8(line, encoding)
             if not line or (comment and line.startswith(comment)):
                 continue
             yield line
     raise StopIteration
+
 
 class Lexicon(lazydict):
 
@@ -236,21 +622,42 @@ class Lexicon(lazydict):
 
     def load(self):
         # Arnold NNP x
-        dict.update(self, (x.split(" ")[:2] for x in _read(self._path)))
+        dict.update(self, (x.split(" ")[:2] for x in _read(self._path) if len(x.split(" ")) > 1))
+
+#--- FREQUENCY -------------------------------------------------------------------------------------
+
+
+class Frequency(lazydict):
+
+    def __init__(self, path=""):
+        """ A dictionary of words and their relative document frequency.
+        """
+        self._path = path
+
+    @property
+    def path(self):
+        return self._path
+
+    def load(self):
+        # and 0.4805
+        for x in _read(self.path):
+            x = x.split()
+            dict.__setitem__(self, x[0], float(x[1]))
 
 #--- LANGUAGE MODEL --------------------------------------------------------------------------------
 # A language model determines the statistically most probable tag for an unknown word.
 # A pattern.vector Classifier such as SLP can be used to produce a language model,
-# by generalizing patterns from a treebank (i.e., a corpus of hand-tagged texts). 
+# by generalizing patterns from a treebank (i.e., a corpus of hand-tagged texts).
 # For example:
-# "generalizing/VBG from/IN patterns/NNS" and 
+# "generalizing/VBG from/IN patterns/NNS" and
 # "dancing/VBG with/IN squirrels/NNS"
 # both have a pattern -ing/VBG + [?] + NNS => IN.
 # Unknown words preceded by -ing and followed by a plural noun will be tagged IN (preposition),
 # unless (put simply) a majority of other patterns learned by the classifier disagrees.
 
+
 class Model(object):
-    
+
     def __init__(self, path="", classifier=None, known=set(), unknown=set()):
         """ A language model using a classifier (e.g., SLP, SVM) trained on morphology and context.
         """
@@ -261,7 +668,7 @@ class Model(object):
             sys.path.insert(0, os.path.join(MODULE, ".."))
             from vector import Classifier
             from vector import Perceptron
-        self._path  = path
+        self._path = path
         # Use a property instead of a subclass, so users can choose their own classifier.
         self._classifier = Classifier.load(path) if path else classifier or Perceptron()
         # Parser.lexicon entries can be ambiguous (e.g., about/IN  is RB 25% of the time).
@@ -276,14 +683,17 @@ class Model(object):
         return self._path
 
     @classmethod
-    def load(self, lexicon={}, path=""):
-        return Model(lexicon, path)
+    def load(self, path="", lexicon={}):
+        return Model(path, lexicon)
 
     def save(self, path, final=True):
         self._classifier._data["model_unknown"] = self.unknown
         self._classifier.save(path, final) # final = unlink training data (smaller file).
 
     def train(self, token, tag, previous=None, next=None):
+        """ Trains the model to predict the given tag for the given token,
+            in context of the given previous and next (token, tag)-tuples.
+        """
         self._classifier.train(self._v(token, previous, next), type=tag)
 
     def classify(self, token, previous=None, next=None, **kwargs):
@@ -299,37 +709,38 @@ class Model(object):
         return [token[0], self._classifier.classify(self._v(token[0], previous, next))]
 
     def _v(self, token, previous=None, next=None):
-        """ Returns a training vector for the given (word, tag)-tuple and its context.
+        """ Returns a training vector for the given token and its context.
         """
-        def f(v, s1, s2):
-            if s2: 
-                v[s1 + " " + s2] = 1
+        def f(v, *s):
+            v[" ".join(s)] = 1
         p, n = previous, next
         p = ("", "") if not p else (p[0] or "", p[1] or "")
         n = ("", "") if not n else (n[0] or "", n[1] or "")
         v = {}
-        f(v,  "b", "b")         # Bias.
-        f(v,  "h", token[0])    # Capitalization.
-        f(v,  "w", token[-6:] if token not in self.known or token in self.unknown else "")
-        f(v,  "x", token[-3:])  # Word suffix.
+        f(v, "b", "b")         # Bias.
+        f(v, "h", token[:1])   # Capitalization.
+        f(v, "w", token[-6:] if token not in self.known or token in self.unknown else "")
+        f(v, "x", token[-3:])  # Word suffix.
         f(v, "-x", p[0][-3:])   # Word suffix left.
         f(v, "+x", n[0][-3:])   # Word suffix right.
         f(v, "-t", p[1])        # Tag left.
         f(v, "-+", p[1] + n[1]) # Tag left + right.
         f(v, "+t", n[1])        # Tag right.
         return v
-        
+
     def _get_description(self):
         return self._classifier.description
+
     def _set_description(self, s):
         self._classifier.description = s
-    
+
     description = property(_get_description, _set_description)
 
 #--- MORPHOLOGICAL RULES ---------------------------------------------------------------------------
 # Brill's algorithm generates lexical (i.e., morphological) rules in the following format:
 # NN s fhassuf 1 NNS x => unknown words ending in -s and tagged NN change to NNS.
 #     ly hassuf 2 RB x => unknown words ending in -ly change to RB.
+
 
 class Morphology(lazylist):
 
@@ -338,7 +749,7 @@ class Morphology(lazylist):
         """
         self.known = known
         self._path = path
-        self._cmd  = set((
+        self._cmd = set((
                 "word", # Word is x.
                 "char", # Word contains x.
              "haspref", # Word starts with x.
@@ -359,7 +770,7 @@ class Morphology(lazylist):
     def load(self):
         # ["NN", "s", "fhassuf", "1", "NNS", "x"]
         list.extend(self, (x.split() for x in _read(self._path)))
-        
+
     def apply(self, token, previous=(None, None), next=(None, None)):
         """ Applies lexical rules to the given token, which is a [word, tag] list.
         """
@@ -395,13 +806,13 @@ class Morphology(lazylist):
         if affix.endswith("-"):
             affix, cmd = affix[+0:-1], "haspref"
         if tagged:
-            r = [tagged, affix, "f"+cmd.lstrip("f"), tag, "x"]
+            r = [tagged, affix, "f" + cmd.lstrip("f"), tag, "x"]
         else:
             r = [affix, cmd.lstrip("f"), tag, "x"]
         lazylist.insert(self, i, r)
 
     def append(self, *args, **kwargs):
-        self.insert(len(self)-1, *args, **kwargs)
+        self.insert(len(self) - 1, *args, **kwargs)
 
     def extend(self, rules=[]):
         for r in rules:
@@ -410,6 +821,7 @@ class Morphology(lazylist):
 #--- CONTEXT RULES ---------------------------------------------------------------------------------
 # Brill's algorithm generates contextual rules in the following format:
 # VBD VB PREVTAG TO => unknown word tagged VBD changes to VB if preceded by a word tagged TO.
+
 
 class Context(lazylist):
 
@@ -469,31 +881,31 @@ class Context(lazylist):
                     continue
                 cmd, x, y = r[2], r[3], r[4] if len(r) > 4 else ""
                 cmd = cmd.lower()
-                if (cmd == "prevtag"        and x ==  t[i-1][1]) \
-                or (cmd == "nexttag"        and x ==  t[i+1][1]) \
-                or (cmd == "prev2tag"       and x ==  t[i-2][1]) \
-                or (cmd == "next2tag"       and x ==  t[i+2][1]) \
-                or (cmd == "prev1or2tag"    and x in (t[i-1][1], t[i-2][1])) \
-                or (cmd == "next1or2tag"    and x in (t[i+1][1], t[i+2][1])) \
-                or (cmd == "prev1or2or3tag" and x in (t[i-1][1], t[i-2][1], t[i-3][1])) \
-                or (cmd == "next1or2or3tag" and x in (t[i+1][1], t[i+2][1], t[i+3][1])) \
-                or (cmd == "surroundtag"    and x ==  t[i-1][1] and y == t[i+1][1]) \
-                or (cmd == "curwd"          and x ==  t[i+0][0]) \
-                or (cmd == "prevwd"         and x ==  t[i-1][0]) \
-                or (cmd == "nextwd"         and x ==  t[i+1][0]) \
-                or (cmd == "prev1or2wd"     and x in (t[i-1][0], t[i-2][0])) \
-                or (cmd == "next1or2wd"     and x in (t[i+1][0], t[i+2][0])) \
-                or (cmd == "prevwdtag"      and x ==  t[i-1][0] and y == t[i-1][1]) \
-                or (cmd == "nextwdtag"      and x ==  t[i+1][0] and y == t[i+1][1]) \
-                or (cmd == "wdprevtag"      and x ==  t[i-1][1] and y == t[i+0][0]) \
-                or (cmd == "wdnexttag"      and x ==  t[i+0][0] and y == t[i+1][1]) \
-                or (cmd == "wdand2aft"      and x ==  t[i+0][0] and y == t[i+2][0]) \
-                or (cmd == "wdand2tagbfr"   and x ==  t[i-2][1] and y == t[i+0][0]) \
-                or (cmd == "wdand2tagaft"   and x ==  t[i+0][0] and y == t[i+2][1]) \
-                or (cmd == "lbigram"        and x ==  t[i-1][0] and y == t[i+0][0]) \
-                or (cmd == "rbigram"        and x ==  t[i+0][0] and y == t[i+1][0]) \
-                or (cmd == "prevbigram"     and x ==  t[i-2][1] and y == t[i-1][1]) \
-                or (cmd == "nextbigram"     and x ==  t[i+1][1] and y == t[i+2][1]):
+                if (cmd == "prevtag"        and x ==  t[i - 1][1]) \
+                or (cmd == "nexttag"        and x ==  t[i + 1][1]) \
+                or (cmd == "prev2tag"       and x ==  t[i - 2][1]) \
+                or (cmd == "next2tag"       and x ==  t[i + 2][1]) \
+                or (cmd == "prev1or2tag"    and x in (t[i - 1][1], t[i - 2][1])) \
+                or (cmd == "next1or2tag"    and x in (t[i + 1][1], t[i + 2][1])) \
+                or (cmd == "prev1or2or3tag" and x in (t[i - 1][1], t[i - 2][1], t[i - 3][1])) \
+                or (cmd == "next1or2or3tag" and x in (t[i + 1][1], t[i + 2][1], t[i + 3][1])) \
+                or (cmd == "surroundtag"    and x ==  t[i - 1][1] and y == t[i + 1][1]) \
+                or (cmd == "curwd"          and x ==  t[i + 0][0]) \
+                or (cmd == "prevwd"         and x ==  t[i - 1][0]) \
+                or (cmd == "nextwd"         and x ==  t[i + 1][0]) \
+                or (cmd == "prev1or2wd"     and x in (t[i - 1][0], t[i - 2][0])) \
+                or (cmd == "next1or2wd"     and x in (t[i + 1][0], t[i + 2][0])) \
+                or (cmd == "prevwdtag"      and x ==  t[i - 1][0] and y == t[i - 1][1]) \
+                or (cmd == "nextwdtag"      and x ==  t[i + 1][0] and y == t[i + 1][1]) \
+                or (cmd == "wdprevtag"      and x ==  t[i - 1][1] and y == t[i + 0][0]) \
+                or (cmd == "wdnexttag"      and x ==  t[i + 0][0] and y == t[i + 1][1]) \
+                or (cmd == "wdand2aft"      and x ==  t[i + 0][0] and y == t[i + 2][0]) \
+                or (cmd == "wdand2tagbfr"   and x ==  t[i - 2][1] and y == t[i + 0][0]) \
+                or (cmd == "wdand2tagaft"   and x ==  t[i + 0][0] and y == t[i + 2][1]) \
+                or (cmd == "lbigram"        and x ==  t[i - 1][0] and y == t[i + 0][0]) \
+                or (cmd == "rbigram"        and x ==  t[i + 0][0] and y == t[i + 1][0]) \
+                or (cmd == "prevbigram"     and x ==  t[i - 2][1] and y == t[i - 1][1]) \
+                or (cmd == "nextbigram"     and x ==  t[i + 1][1] and y == t[i + 2][1]):
                     t[i] = [t[i][0], r[1]]
         return t[len(o):-len(o)]
 
@@ -502,13 +914,15 @@ class Context(lazylist):
             given constraints x and y, e.g., Context.append("TO < NN", "VB")
         """
         if " < " in tag1 and not x and not y:
-            tag1, x = tag1.split(" < "); cmd="prevtag"
+            tag1, x = tag1.split(" < ")
+            cmd = "prevtag"
         if " > " in tag1 and not x and not y:
-            x, tag1 = tag1.split(" > "); cmd="nexttag"
+            x, tag1 = tag1.split(" > ")
+            cmd = "nexttag"
         lazylist.insert(self, i, [tag1, tag2, cmd, x or "", y or ""])
 
     def append(self, *args, **kwargs):
-        self.insert(len(self)-1, *args, **kwargs)
+        self.insert(len(self) - 1, *args, **kwargs)
 
     def extend(self, rules=[]):
         for r in rules:
@@ -517,8 +931,9 @@ class Context(lazylist):
 #--- NAMED ENTITY RECOGNIZER -----------------------------------------------------------------------
 
 RE_ENTITY1 = re.compile(r"^http://")                            # http://www.domain.com/path
-RE_ENTITY2 = re.compile(r"^www\..*?\.[com|org|net|edu|de|uk]$") # www.domain.com
+RE_ENTITY2 = re.compile(r"^www\..*?\.(com|org|net|edu|de|uk)$") # www.domain.com
 RE_ENTITY3 = re.compile(r"^[\w\-\.\+]+@(\w[\w\-]+\.)+[\w\-]+$") # name@domain.com
+
 
 class Entities(lazydict):
 
@@ -526,9 +941,9 @@ class Entities(lazydict):
         """ A dictionary of named entities and their labels.
             For domain names and e-mail adresses, regular expressions are used.
         """
-        self.tag   = tag
+        self.tag = tag
         self._path = path
-        self._cmd  = ((
+        self._cmd = ((
             "pers", # Persons: George/NNP-PERS
              "loc", # Locations: Washington/NNP-LOC
              "org", # Organizations: Google/NNP-ORG
@@ -561,13 +976,14 @@ class Entities(lazydict):
             if w in self:
                 for e in self[w]:
                     # Look ahead to see if successive words match the named entity.
-                    e, tag = (e[:-1], "-"+e[-1].upper()) if e[-1] in self._cmd else (e, "")
+                    e, tag = (e[:-1], "-" + e[-1].upper()) if e[-1] in self._cmd else (e, "")
                     b = True
                     for j, e in enumerate(e):
-                        if i + j >= len(tokens) or tokens[i+j][0].lower() != e:
-                            b = False; break
+                        if i + j >= len(tokens) or tokens[i + j][0].lower() != e:
+                            b = False
+                            break
                     if b:
-                        for token in tokens[i:i+j+1]:
+                        for token in tokens[i:i + j + 1]:
                             token[1] = token[1] if token[1].startswith(self.tag) else self.tag
                             token[1] += tag
                         i += j
@@ -579,7 +995,7 @@ class Entities(lazydict):
         """ Appends a named entity to the lexicon,
             e.g., Entities.append("Hooloovoo", "PERS")
         """
-        e = map(lambda s: s.lower(), entity.split(" ") + [name])
+        e = list(map(lambda s: s.lower(), entity.split(" ") + [name]))
         self.setdefault(e[0], []).append(e)
 
     def extend(self, entities):
@@ -622,9 +1038,10 @@ class Entities(lazydict):
 # http://www.clips.ua.ac.be/pages/penn-treebank-tagset
 PTB = PENN = "penn"
 
+
 class Parser(object):
 
-    def __init__(self, lexicon={}, model=None, morphology=None, context=None, entities=None, default=("NN", "NNP", "CD"), language=None):        
+    def __init__(self, lexicon={}, frequency={}, model=None, morphology=None, context=None, entities=None, default=("NN", "NNP", "CD"), language=None):
         """ A simple shallow parser using a Brill-based part-of-speech tagger.
             The given lexicon is a dictionary of known words and their part-of-speech tag.
             The given default tags are used for unknown words.
@@ -635,18 +1052,22 @@ class Parser(object):
             The given language can be used to discern between
             Germanic and Romance languages for phrase chunking.
         """
-        self.lexicon    = lexicon or {}
-        self.model      = model
+        self.lexicon = lexicon or {}
+        self.frequency = frequency or {}
+        self.model = model
         self.morphology = morphology
-        self.context    = context
-        self.entities   = entities
-        self.default    = default
-        self.language   = language
+        self.context = context
+        self.entities = entities
+        self.default = default
+        self.language = language
         # Load data.
-        f = lambda s: isinstance(s, basestring) or hasattr(s, "read")
+        f = lambda s: isinstance(s, str) or hasattr(s, "read")
         if f(lexicon):
             # Known words.
             self.lexicon = Lexicon(path=lexicon)
+        if f(frequency):
+            # Word frequency.
+            self.frequency = Frequency(path=frequency)
         if f(morphology):
             # Unknown word rules based on word suffix.
             self.morphology = Morphology(path=morphology, known=self.lexicon)
@@ -658,10 +1079,19 @@ class Parser(object):
             self.entities = Entities(path=entities, tag=default[1])
         if f(model):
             # Word part-of-speech classifier.
-            try: 
+            try:
                 self.model = Model(path=model)
             except ImportError: # pattern.vector
                 pass
+
+    def find_keywords(self, string, **kwargs):
+        """ Returns a sorted list of keywords in the given string.
+        """
+        return find_keywords(string,
+                     parser = self,
+                        top = kwargs.pop("top", 10),
+                  frequency = kwargs.pop("frequency", {}), **kwargs
+        )
 
     def find_tokens(self, string, **kwargs):
         """ Returns a list of sentences from the given string.
@@ -669,9 +1099,9 @@ class Parser(object):
         """
         # "The cat purs." => ["The cat purs ."]
         return find_tokens(string,
-                punctuation = kwargs.get(  "punctuation", PUNCTUATION),
+                punctuation = kwargs.get("punctuation", PUNCTUATION),
               abbreviations = kwargs.get("abbreviations", ABBREVIATIONS),
-                    replace = kwargs.get(      "replace", replacements),
+                    replace = kwargs.get("replace", replacements),
                   linebreak = r"\n{2,}")
 
     def find_tags(self, tokens, **kwargs):
@@ -680,14 +1110,14 @@ class Parser(object):
         """
         # ["The", "cat", "purs"] => [["The", "DT"], ["cat", "NN"], ["purs", "VB"]]
         return find_tags(tokens,
-                    lexicon = kwargs.get(   "lexicon", self.lexicon or {}),
-                      model = kwargs.get(     "model", self.model),
+                    lexicon = kwargs.get("lexicon", self.lexicon or {}),
+                      model = kwargs.get("model", self.model),
                  morphology = kwargs.get("morphology", self.morphology),
-                    context = kwargs.get(   "context", self.context),
-                   entities = kwargs.get(  "entities", self.entities),
-                   language = kwargs.get(  "language", self.language),
-                    default = kwargs.get(   "default", self.default),
-                        map = kwargs.get(       "map", None))
+                    context = kwargs.get("context", self.context),
+                   entities = kwargs.get("entities", self.entities),
+                   language = kwargs.get("language", self.language),
+                    default = kwargs.get("default", self.default),
+                        map = kwargs.get("map", None))
 
     def find_chunks(self, tokens, **kwargs):
         """ Annotates the given list of tokens with chunk tags.
@@ -729,8 +1159,8 @@ class Parser(object):
         if tokenize is True:
             s = self.find_tokens(s, **kwargs)
         if isinstance(s, (list, tuple)):
-            s = [isinstance(s, basestring) and s.split(" ") or s for s in s]
-        if isinstance(s, basestring):
+            s = [isinstance(s, str) and s.split(" ") or s for s in s]
+        if isinstance(s, str):
             s = [s.split(" ") for s in s.split("\n")]
         # Unicode.
         for i in range(len(s)):
@@ -787,20 +1217,21 @@ class Parser(object):
 
 TOKENS = "tokens"
 
-class TaggedString(unicode):
+
+class TaggedString(str):
 
     def __new__(self, string, tags=["word"], language=None):
         """ Unicode string with tags and language attributes.
             For example: TaggedString("cat/NN/NP", tags=["word", "pos", "chunk"]).
         """
         # From a TaggedString:
-        if isinstance(string, unicode) and hasattr(string, "tags"):
+        if isinstance(string, str) and hasattr(string, "tags"):
             tags, language = string.tags, string.language
         # From a TaggedString.split(TOKENS) list:
         if isinstance(string, list):
             string = [[[x.replace("/", "&slash;") for x in token] for token in s] for s in string]
             string = "\n".join(" ".join("/".join(token) for token in s) for s in string)
-        s = unicode.__new__(self, string)
+        s = str.__new__(self, string)
         s.tags = list(tags)
         s.language = language
         return s
@@ -810,12 +1241,12 @@ class TaggedString(unicode):
             where each token is a list of word + tags.
         """
         if sep != TOKENS:
-            return unicode.split(self, sep)
+            return str.split(self, sep)
         if len(self) == 0:
             return []
         return [[[x.replace("&slash;", "/") for x in token.split("/")]
             for token in sentence.split(" ")]
-                for sentence in unicode.split(self, "\n")]
+                for sentence in str.split(self, "\n")]
 
 #--- UNIVERSAL TAGSET ------------------------------------------------------------------------------
 # The default part-of-speech tagset used in Pattern is Penn Treebank II.
@@ -835,6 +1266,7 @@ UNIVERSAL = "universal"
 NOUN, VERB, ADJ, ADV, PRON, DET, PREP, ADP, NUM, CONJ, INTJ, PRT, PUNC, X = \
     "NN", "VB", "JJ", "RB", "PR", "DT", "PP", "PP", "NO", "CJ", "UH", "PT", ".", "X"
 
+
 def penntreebank2universal(token, tag):
     """ Returns a (token, tag)-tuple with a simplified universal part-of-speech tag.
     """
@@ -848,19 +1280,19 @@ def penntreebank2universal(token, tag):
         return (token, ADJ)
     if tag in ("RB", "RBR", "RBS", "WRB"):
         return (token, ADV)
-    if tag in ("PRP", "PRP$", "WP", "WP$"):
+    if tag in ("PR", "PRP", "PRP$", "WP", "WP$"):
         return (token, PRON)
     if tag in ("DT", "PDT", "WDT", "EX"):
         return (token, DET)
-    if tag in ("IN",):
+    if tag in ("IN", "PP"):
         return (token, PREP)
-    if tag in ("CD",):
+    if tag in ("CD", "NO"):
         return (token, NUM)
-    if tag in ("CC",):
+    if tag in ("CC", "CJ"):
         return (token, CONJ)
     if tag in ("UH",):
         return (token, INTJ)
-    if tag in ("POS", "RP", "TO"):
+    if tag in ("POS", "PT", "RP", "TO"):
         return (token, PRT)
     if tag in ("SYM", "LS", ".", "!", "?", ",", ":", "(", ")", "\"", "#", "$"):
         return (token, PUNC)
@@ -870,43 +1302,29 @@ def penntreebank2universal(token, tag):
 
 TOKEN = re.compile(r"(\S+)\s")
 
-# Handle common punctuation marks.
+# Common accent letters.
+DIACRITICS = \
+diacritics = "àáâãäåąāæçćčςďèéêëēěęģìíîïīłįķļľņñňńйðòóôõöøþřšťùúûüůųýÿўžż"
+
+# Common punctuation marks.
 PUNCTUATION = \
 punctuation = ".,;:!?()[]{}`''\"@#$^&*+-|=~_"
 
-# Handle common abbreviations.
-ABBREVIATIONS = abbreviations = set((
-    "a.", "adj.", "adv.", "al.", "a.m.", "art.", "c.", "capt.", "cert.", "cf.", "col.", "Col.", 
-    "comp.", "conf.", "def.", "Dep.", "Dept.", "Dr.", "dr.", "ed.", "e.g.", "esp.", "etc.", "ex.", 
-    "f.", "fig.", "gen.", "id.", "i.e.", "int.", "l.", "m.", "Med.", "Mil.", "Mr.", "n.", "n.q.", 
+# Common abbreviations.
+ABBREVIATIONS = \
+abbreviations = set((
+    "a.", "adj.", "adv.", "al.", "a.m.", "art.", "c.", "capt.", "cert.", "cf.", "col.", "Col.",
+    "comp.", "conf.", "def.", "Dep.", "Dept.", "Dr.", "dr.", "ed.", "e.g.", "esp.", "etc.", "ex.",
+    "f.", "fig.", "gen.", "id.", "i.e.", "int.", "l.", "m.", "Med.", "Mil.", "Mr.", "n.", "n.q.",
     "orig.", "pl.", "pred.", "pres.", "p.m.", "ref.", "v.", "vs.", "w/"
 ))
 
-RE_ABBR1 = re.compile("^[A-Za-z]\.$")       # single letter, "T. De Smedt"
-RE_ABBR2 = re.compile("^([A-Za-z]\.)+$")    # alternating letters, "U.S."
-RE_ABBR3 = re.compile("^[A-Z][" + "|".join( # capital followed by consonants, "Mr."
-        "bcdfghjklmnpqrstvwxz") + "]+.$")
+RE_ABBR1 = re.compile(r"^[A-Za-z]\.$")     # single letter, "T. De Smedt"
+RE_ABBR2 = re.compile(r"^([A-Za-z]\.)+$")  # alternating letters, "U.S."
+RE_ABBR3 = re.compile(r"^[A-Z][%s]+.$" % ( # capital followed by consonants, "Mr."
+        "|".join("bcdfghjklmnpqrstvwxz")))
 
-# Handle emoticons.
-EMOTICONS = { # (facial expression, sentiment)-keys
-    ("love" , +1.00): set(("<3", u"♥")),
-    ("grin" , +1.00): set((">:D", ":-D", ":D", "=-D", "=D", "X-D", "x-D", "XD", "xD", "8-D")),
-    ("taunt", +0.75): set((">:P", ":-P", ":P", ":-p", ":p", ":-b", ":b", ":c)", ":o)", ":^)")),
-    ("smile", +0.50): set((">:)", ":-)", ":)", "=)", "=]", ":]", ":}", ":>", ":3", "8)", "8-)")),
-    ("wink" , +0.25): set((">;]", ";-)", ";)", ";-]", ";]", ";D", ";^)", "*-)", "*)")),
-    ("gasp" , +0.05): set((">:o", ":-O", ":O", ":o", ":-o", "o_O", "o.O", u"°O°", u"°o°")),
-    ("worry", -0.25): set((">:/",  ":-/", ":/", ":\\", ">:\\", ":-.", ":-s", ":s", ":S", ":-S", ">.>")),
-    ("frown", -0.75): set((">:[", ":-(", ":(", "=(", ":-[", ":[", ":{", ":-<", ":c", ":-c", "=/")),
-    ("cry"  , -1.00): set((":'(", ":'''(", ";'("))
-}
-
-RE_EMOTICONS = [r" ?".join(map(re.escape, e)) for v in EMOTICONS.values() for e in v]
-RE_EMOTICONS = re.compile(r"(%s)($|\s)" % "|".join(RE_EMOTICONS))
-
-# Handle sarcasm punctuation (!).
-RE_SARCASM = re.compile(r"\( ?\! ?\)")
-
-# Handle common contractions.
+# Common contractions.
 replacements = {
      "'d": " 'd",
      "'m": " 'm",
@@ -917,8 +1335,52 @@ replacements = {
     "n't": " n't"
 }
 
-# Handle paragraph line breaks (\n\n marks end of sentence).
+# Common emoticons.
+EMOTICONS = \
+emoticons = { # (facial expression, sentiment)-keys
+    ("love" , +1.00): set(("<3", "♥", "❤")),
+    ("grin" , +1.00): set((">:D", ":-D", ":D", "=-D", "=D", "X-D", "x-D", "XD", "xD", "8-D")),
+    ("taunt", +0.75): set((">:P", ":-P", ":P", ":-p", ":p", ":-b", ":b", ":c)", ":o)", ":^)")),
+    ("smile", +0.50): set((">:)", ":-)", ":)", "=)", "=]", ":]", ":}", ":>", ":3", "8)", "8-)")),
+    ("wink" , +0.25): set((">;]", ";-)", ";)", ";-]", ";]", ";D", ";^)", "*-)", "*)")),
+    ("blank", +0.00): set((":-|", ":|")),
+    ("gasp" , -0.05): set((">:o", ":-O", ":O", ":o", ":-o", "o_O", "o.O", "°O°", "°o°")),
+    ("worry", -0.25): set((">:/", ":-/", ":/", ":\\", ">:\\", ":-.", ":-s", ":s", ":S", ":-S", ">.>")),
+    ("frown", -0.75): set((">:[", ":-(", ":(", "=(", ":-[", ":[", ":{", ":-<", ":c", ":-c", "=/")),
+    ("cry"  , -1.00): set((":'(", ":'''(", ";'("))
+}
+
+RE_EMOTICONS = [r" ?".join(map(re.escape, e)) for v in EMOTICONS.values() for e in v]
+RE_EMOTICONS = re.compile(r"(%s)($|\s)" % "|".join(RE_EMOTICONS))
+
+# Common emoji.
+EMOJI = \
+emoji = { # (facial expression, sentiment)-keys
+    ("love" , +1.00): set(("❤️", "💜", "💚", "💙", "💛", "💕")),
+    ("grin" , +1.00): set(("😀", "😄", "😃", "😆", "😅", "😂", "😁", "😻", "😍", "😈", "👌")),
+    ("taunt", +0.75): set(("😛", "😝", "😜", "😋", "😇")),
+    ("smile", +0.50): set(("😊", "😌", "😏", "😎", "☺", "👍")),
+    ("wink" , +0.25): set(("😉")),
+    ("blank", +0.00): set(("😐", "😶")),
+    ("gasp" , -0.05): set(("😳", "😮", "😯", "😧", "😦", "🙀")),
+    ("worry", -0.25): set(("😕", "😬")),
+    ("frown", -0.75): set(("😟", "😒", "😔", "😞", "😠", "😩", "😫", "😡", "👿")),
+    ("cry"  , -1.00): set(("😢", "😥", "😓", "😪", "😭", "😿")),
+}
+
+RE_EMOJI = [e for v in EMOJI.values() for e in v]
+RE_EMOJI = re.compile(r"(\s?)(%s)(\s?)" % "|".join(RE_EMOJI))
+
+# Mention marker: "@tomdesmedt".
+RE_MENTION = re.compile(r"\@([0-9a-zA-z_]+)(\s|\,|\:|\.|\!|\?|$)")
+
+# Sarcasm marker: "(!)".
+RE_SARCASM = re.compile(r"\( ?\! ?\)")
+
+# Paragraph line breaks
+# (\n\n marks end of sentence).
 EOS = "END-OF-SENTENCE"
+
 
 def find_tokens(string, punctuation=PUNCTUATION, abbreviations=ABBREVIATIONS, replace=replacements, linebreak=r"\n{2,}"):
     """ Returns a list of sentences. Each sentence is a space-separated string of tokens (words).
@@ -926,58 +1388,65 @@ def find_tokens(string, punctuation=PUNCTUATION, abbreviations=ABBREVIATIONS, re
         Punctuation marks are split from other words. Periods (or ?!) mark the end of a sentence.
         Headings without an ending period are inferred by line breaks.
     """
-    # Handle periods separately.
-    punctuation = tuple(punctuation.replace(".", ""))
+    # Handle punctuation.
+    punctuation = tuple(punctuation)
     # Handle replacements (contractions).
     for a, b in replace.items():
         string = re.sub(a, b, string)
     # Handle Unicode quotes.
-    if isinstance(string, unicode):
-        string = string.replace(u"“", u" “ ")
-        string = string.replace(u"”", u" ” ")
-        string = string.replace(u"‘", u" ‘ ")
-        string = string.replace(u"’", u" ’ ")
+    if isinstance(string, str):
+        string = string.replace("“", " “ ")
+        string = string.replace("”", " ” ")
+        string = string.replace("‘", " ‘ ")
+        string = string.replace("’", " ’ ")
     # Collapse whitespace.
     string = re.sub("\r\n", "\n", string)
     string = re.sub(linebreak, " %s " % EOS, string)
     string = re.sub(r"\s+", " ", string)
     tokens = []
     # Handle punctuation marks.
-    for t in TOKEN.findall(string+" "):
+    for t in TOKEN.findall(string + " "):
         if len(t) > 0:
             tail = []
-            while t.startswith(punctuation) and \
-              not t in replace:
-                # Split leading punctuation.
-                if t.startswith(punctuation):
-                    tokens.append(t[0]); t=t[1:]
-            while t.endswith(punctuation+(".",)) and \
-              not t in replace:
-                # Split trailing punctuation.
-                if t.endswith(punctuation):
-                    tail.append(t[-1]); t=t[:-1]
-                # Split ellipsis (...) before splitting period.
-                if t.endswith("..."):
-                    tail.append("..."); t=t[:-3].rstrip(".")
-                # Split period (if not an abbreviation).
-                if t.endswith("."):
-                    if t in abbreviations or \
-                      RE_ABBR1.match(t) is not None or \
-                      RE_ABBR2.match(t) is not None or \
-                      RE_ABBR3.match(t) is not None:
-                        break
-                    else:
-                        tail.append(t[-1]); t=t[:-1]
+            if not RE_MENTION.match(t):
+                while t.startswith(punctuation) and \
+                  t not in replace:
+                    # Split leading punctuation.
+                    if t.startswith(punctuation):
+                        tokens.append(t[0]); t = t[1:]
+            if not False:
+                while t.endswith(punctuation) and \
+                  t not in replace:
+                    # Split trailing punctuation.
+                    if t.endswith(punctuation) and not t.endswith("."):
+                        tail.append(t[-1]); t = t[:-1]
+                    # Split ellipsis (...) before splitting period.
+                    if t.endswith("..."):
+                        tail.append("..."); t = t[:-3].rstrip(".")
+                    # Split period (if not an abbreviation).
+                    if t.endswith("."):
+                        if t in abbreviations or \
+                          RE_ABBR1.match(t) is not None or \
+                          RE_ABBR2.match(t) is not None or \
+                          RE_ABBR3.match(t) is not None:
+                            break
+                        else:
+                            tail.append(t[-1]); t = t[:-1]
             if t != "":
                 tokens.append(t)
             tokens.extend(reversed(tail))
+    # Handle citations (periods + quotes).
+    if isinstance(string, str):
+        quotes = ("'", "\"", "”", "’")
+    else:
+        quotes = ("'", "\"")
     # Handle sentence breaks (periods, quotes, parenthesis).
     sentences, i, j = [[]], 0, 0
     while j < len(tokens):
         if tokens[j] in ("...", ".", "!", "?", EOS):
             while j < len(tokens) \
-              and tokens[j] in ("'", "\"", u"”", u"’", "...", ".", "!", "?", ")", EOS):
-                if tokens[j] in ("'", "\"") and sentences[-1].count(tokens[j]) % 2 == 0:
+              and (tokens[j] in ("...", ".", "!", "?", EOS) or tokens[j] in quotes):
+                if tokens[j] in quotes and sentences[-1].count(tokens[j]) % 2 == 0:
                     break # Balanced quotes.
                 j += 1
             sentences[-1].extend(t for t in tokens[i:j] if t != EOS)
@@ -990,12 +1459,16 @@ def find_tokens(string, punctuation=PUNCTUATION, abbreviations=ABBREVIATIONS, re
     sentences = (RE_SARCASM.sub("(!)", s) for s in sentences)
     sentences = [RE_EMOTICONS.sub(
         lambda m: m.group(1).replace(" ", "") + m.group(2), s) for s in sentences]
+    sentences = [RE_EMOJI.sub(
+        lambda m: (m.group(1) or " ") + m.group(2) + (m.group(3) or " "), s) for s in sentences]
+    sentences = [s.replace("  ", " ").strip() for s in sentences]
     return sentences
 
 #--- PART-OF-SPEECH TAGGER -------------------------------------------------------------------------
 
 # Unknown words are recognized as numbers if they contain only digits and -,.:/%$
 CD = re.compile(r"^[0-9\-\,\.\:\/\%\$]+$")
+
 
 def _suffix_rules(token, tag="NN"):
     """ Default morphological tagging rules for English, based on word suffixes.
@@ -1015,6 +1488,7 @@ def _suffix_rules(token, tag="NN"):
     if token.endswith(("ate", "ify", "ise", "ize")):
         tag = "VBP"
     return [token, tag]
+
 
 def find_tags(tokens, lexicon={}, model=None, morphology=None, context=None, entities=None, default=("NN", "NNP", "CD"), language="en", map=None, **kwargs):
     """ Returns a list of [token, tag]-items for the given list of tokens:
@@ -1036,9 +1510,9 @@ def find_tags(tokens, lexicon={}, model=None, morphology=None, context=None, ent
     for i, (token, tag) in enumerate(tagged):
         prev, next = (None, None), (None, None)
         if i > 0:
-            prev = tagged[i-1]
+            prev = tagged[i - 1]
         if i < len(tagged) - 1:
-            next = tagged[i+1]
+            next = tagged[i + 1]
         if tag is None or token in (model is not None and model.unknown or ()):
             # Use language model (i.e., SLP).
             if model is not None:
@@ -1081,9 +1555,9 @@ CC = r"CC|CJ"
 
 # Chunking rules.
 # CHUNKS[0] = Germanic: RB + JJ precedes NN ("the round table").
-# CHUNKS[1] = Romance: RB + JJ precedes or follows NN ("la table ronde", "une jolie fille").
+# CHUNKS[1] = Romance : RB + JJ precedes or follows NN ("la table ronde", "une jolie fille").
 CHUNKS = [[
-    # Germanic languages: en, de, nl, ...
+    # Germanic languages: da, de, en, is, nl, no, sv (also applies to cs, pl, ru, ...)
     (  "NP", r"((NN)/)* ((DT|CD|CC)/)* ((RB|JJ)/)* (((JJ)/(CC|,)/)*(JJ)/)* ((NN)/)+"),
     (  "VP", r"(((MD|TO|RB)/)* ((VB)/)+ ((RP)/)*)+"),
     (  "VP", r"((MD)/)"),
@@ -1091,7 +1565,7 @@ CHUNKS = [[
     ("ADJP", r"((RB|JJ)/)* ((JJ)/,/)* ((JJ)/(CC)/)* ((JJ)/)+"),
     ("ADVP", r"((RB)/)+"),
 ], [
-    # Romance languages: es, fr, it, ...
+    # Romance languages: ca, es, fr, it, pt, ro
     (  "NP", r"((NN)/)* ((DT|CD|CC)/)* ((RB|JJ|,)/)* (((JJ)/(CC|,)/)*(JJ)/)* ((NN)/)+ ((RB|JJ)/)*"),
     (  "VP", r"(((MD|TO|RB)/)* ((VB)/)+ ((RP)/)* ((RB)/)*)+"),
     (  "VP", r"((MD)/)"),
@@ -1110,10 +1584,11 @@ for i in (0, 1):
         s = re.compile(s)
         CHUNKS[i][j] = (tag, s)
 
-# Handle ADJP before VP, 
+# Handle ADJP before VP,
 # so that RB prefers next ADJP over previous VP.
 CHUNKS[0].insert(1, CHUNKS[0].pop(3))
 CHUNKS[1].insert(1, CHUNKS[1].pop(3))
+
 
 def find_chunks(tagged, language="en"):
     """ The input is a list of [token, tag]-items.
@@ -1124,14 +1599,14 @@ def find_chunks(tagged, language="en"):
     chunked = [x for x in tagged]
     tags = "".join("%s%s" % (tag, SEPARATOR) for token, tag in tagged)
     # Use Germanic or Romance chunking rules according to given language.
-    for tag, rule in CHUNKS[int(language in ("ca", "es", "pt", "fr", "it", "pt", "ro"))]:
+    for tag, rule in CHUNKS[int(language in ("ca", "es", "fr", "it", "pt", "ro"))]:
         for m in rule.finditer(tags):
             # Find the start of chunks inside the tags-string.
             # Number of preceding separators = number of preceding tokens.
             i = m.start()
             j = tags[:i].count(SEPARATOR)
             n = m.group(0).count(SEPARATOR)
-            for k in range(j, j+n):
+            for k in range(j, j + n):
                 if len(chunked[k]) == 3:
                     continue
                 if len(chunked[k]) < 3:
@@ -1153,14 +1628,15 @@ def find_chunks(tagged, language="en"):
             # "Perhaps you" => ADVP + NP
             # "Really nice work" => NP
             # "Really, nice work" => ADVP + O + NP
-            if i < len(chunked)-1 and not chunked[i+1][1].startswith("JJ"):
-                chunked[i+0][2] = "B-ADVP"
-                chunked[i+1][2] = "B-NP"
-            if i < len(chunked)-1 and chunked[i+1][1] in ("CC", "CJ", ","):
-                chunked[i+1][2] = "O"
-            if i < len(chunked)-2 and chunked[i+1][2] == "O":
-                chunked[i+2][2] = "B-NP"
+            if i < len(chunked) - 1 and not chunked[i + 1][1].startswith("JJ"):
+                chunked[i + 0][2] = "B-ADVP"
+                chunked[i + 1][2] = "B-NP"
+            if i < len(chunked) - 1 and chunked[i + 1][1] in ("CC", "CJ", ","):
+                chunked[i + 1][2] = "O"
+            if i < len(chunked) - 2 and chunked[i + 1][2] == "O":
+                chunked[i + 2][2] = "B-NP"
     return chunked
+
 
 def find_prepositions(chunked):
     """ The input is a list of [token, tag, chunk]-items.
@@ -1173,12 +1649,12 @@ def find_prepositions(chunked):
     for i, chunk in enumerate(chunked):
         if chunk[2].endswith("PP") and chunk[-1] == "O":
             # Find PP followed by other PP, NP with nouns and pronouns, VP with a gerund.
-            if i < len(chunked)-1 and \
-             (chunked[i+1][2].endswith(("NP", "PP")) or \
-              chunked[i+1][1] in ("VBG", "VBN")):
+            if i < len(chunked) - 1 and \
+             (chunked[i + 1][2].endswith(("NP", "PP")) or \
+              chunked[i + 1][1] in ("VBG", "VBN")):
                 chunk[-1] = "B-PNP"
                 pp = True
-                for ch in chunked[i+1:]:
+                for ch in chunked[i + 1:]:
                     if not (ch[2].endswith(("NP", "PP")) or ch[1] in ("VBG", "VBN")):
                         break
                     if ch[2].endswith("PP") and pp:
@@ -1194,6 +1670,7 @@ def find_prepositions(chunked):
 BE = dict.fromkeys(("be", "am", "are", "is", "being", "was", "were", "been"), True)
 GO = dict.fromkeys(("go", "goes", "going", "went"), True)
 
+
 def find_relations(chunked):
     """ The input is a list of [token, tag, chunk]-items.
         The output is a list of [token, tag, chunk, relation]-items.
@@ -1208,39 +1685,137 @@ def find_relations(chunked):
         or token[2].startswith("B-") \
         or tag(token) != tag(chunks[-1][-1]):
             chunks.append([])
-        chunks[-1].append(token+["O"])
+        chunks[-1].append(token + ["O"])
     # If a VP is preceded by a NP, the NP is tagged as NP-SBJ-(id).
     # If a VP is followed by a NP, the NP is tagged as NP-OBJ-(id).
     # Chunks that are not part of a relation get an O-tag.
     id = 0
     for i, chunk in enumerate(chunks):
-        if tag(chunk[-1]) == "VP" and i > 0 and tag(chunks[i-1][-1]) == "NP":
+        if tag(chunk[-1]) == "VP" and i > 0 and tag(chunks[i - 1][-1]) == "NP":
             if chunk[-1][-1] == "O":
                 id += 1
             for token in chunk:
                 token[-1] = "VP-" + str(id)
-            for token in chunks[i-1]:
+            for token in chunks[i - 1]:
                 token[-1] += "*NP-SBJ-" + str(id)
                 token[-1] = token[-1].lstrip("O-*")
-        if tag(chunk[-1]) == "VP" and i < len(chunks)-1 and tag(chunks[i+1][-1]) == "NP":
+        if tag(chunk[-1]) == "VP" and i < len(chunks) - 1 and tag(chunks[i + 1][-1]) == "NP":
             if chunk[-1][-1] == "O":
                 id += 1
             for token in chunk:
                 token[-1] = "VP-" + str(id)
-            for token in chunks[i+1]:
+            for token in chunks[i + 1]:
                 token[-1] = "*NP-OBJ-" + str(id)
                 token[-1] = token[-1].lstrip("O-*")
     # This is more a proof-of-concept than useful in practice:
     # PP-LOC = be + in|at + the|my
     # PP-DIR = go + to|towards + the|my
     for i, chunk in enumerate(chunks):
-        if 0 < i < len(chunks)-1 and len(chunk) == 1 and chunk[-1][-1] == "O":
-            t0, t1, t2 = chunks[i-1][-1], chunks[i][0], chunks[i+1][0] # previous / current / next
+        if 0 < i < len(chunks) - 1 and len(chunk) == 1 and chunk[-1][-1] == "O":
+            t0, t1, t2 = chunks[i - 1][-1], chunks[i][0], chunks[i + 1][0] # previous / current / next
             if tag(t1) == "PP" and t2[1] in ("DT", "PR", "PRP$"):
-                if t0[0] in BE and t1[0] in ("in", "at")      : t1[-1] = "PP-LOC"
-                if t0[0] in GO and t1[0] in ("to", "towards") : t1[-1] = "PP-DIR"
-    related = []; [related.extend(chunk) for chunk in chunks]
+                if t0[0] in BE and t1[0] in ("in", "at"):
+                    t1[-1] = "PP-LOC"
+                if t0[0] in GO and t1[0] in ("to", "towards"):
+                    t1[-1] = "PP-DIR"
+    related = []
+    [related.extend(chunk) for chunk in chunks]
     return related
+
+#--- KEYWORDS EXTRACTION ---------------------------------------------------------------------------
+
+
+def find_keywords(string, parser, top=10, frequency={}, ignore=("rt",), pos=("NN",), **kwargs):
+    """ Returns a sorted list of keywords in the given string.
+        The given parser (e.g., pattern.en.parser) is used to identify noun phrases.
+        The given frequency dictionary can be a reference corpus,
+        with relative document frequency (df, 0.0-1.0) for each lemma, 
+        e.g., {"the": 0.8, "cat": 0.1, ...}
+    """
+    lemmata = kwargs.pop("lemmata", kwargs.pop("stem", True))
+    t = []
+    p = None
+    n = 0
+    # Remove hashtags.
+    s = string.replace("#", ". ")
+    # Parse + chunk string.
+    for sentence in parser.parse(s, chunks=True, lemmata=lemmata).split():
+        for w in sentence: # [token, tag, chunk, preposition, lemma]
+            if w[2].startswith(("B", "O")):
+                t.append([])
+                p = None
+            if w[1].startswith(("NNP", "DT")) and p and \
+               p[1].startswith("NNP") and \
+               p[0][0] != "@" and \
+               w[0][0] != "A":
+                p[+0] += " " + w[+0] # Merge NNP's: "Ms Kitty".
+                p[-1] += " " + w[-1]
+            else:
+                t[-1].append(w)
+            p = t[-1][-1] # word before
+            n = n + 1     # word count
+    # Parse context: {word: chunks}.
+    ctx = {}
+    for i, chunk in enumerate(t):
+        ch = " ".join(w[0] for w in chunk)
+        ch = ch.lower()
+        for w in chunk:
+            ctx.setdefault(w[0], set()).add(ch)
+    # Parse keywords.
+    m = {}
+    for i, chunk in enumerate(t):
+        # Head of "cat hair" => "hair".
+        # Head of "poils de chat" => "poils".
+        head = chunk[-int(parser.language not in ("ca", "es", "pt", "fr", "it", "pt", "ro"))]
+        for w in chunk:
+            # Lemmatize known words.
+            k = lemmata and w[-1] in parser.lexicon and w[-1] or w[0]
+            k = re.sub(r"\"\(\)", "", k)
+            k = k.strip(":.?!")
+            k = k.lower()
+            if not w[1].startswith(pos):
+                continue
+            if len(k) == 1:
+                continue
+            if k.startswith(("http", "www.")):
+                continue
+            if k in ignore or lemmata and w[0] in ignore:
+                continue
+            if k not in m:
+                m[k] = [0, 0, 0, 0, 0, 0]
+            # Scoring:
+            # 0) words that appear more frequently.
+            # 1) words that appear in more contexts (semantic centrality).
+            # 2) words that appear at the start (25%) of the text.
+            # 3) words that are nouns.
+            # 4) words that are not in a prepositional phrase.
+            # 5) words that are the head of a chunk.
+            noun = w[1].startswith("NN")
+            m[k][0] += 1 / float(n)
+            m[k][1] |= 1 if len(ctx[w[0]]) > 1 else 0
+            m[k][2] |= 1 if i / float(len(t)) <= 0.25 else 0
+            m[k][3] |= 1 if noun else 0
+            m[k][4] |= 1 if noun and w[3].startswith("O") else 0
+            m[k][5] |= 1 if noun and w == head else 0
+    # Rate tf-idf.
+    if frequency:
+        for k in m:
+            if not k.isalpha(): # @username, odd!ti's
+                df = 1.0
+            else:
+                df = 1.0 / max(frequency.get(w[0].lower(), frequency.get(k, 0)), 0.0001)
+                df = log(df)
+            m[k][0] *= df
+            #print k, m[k]
+    # Sort candidates alphabetically by total score.
+    # The harmonic mean will emphasize tf-idf score.
+    hmean = lambda a: len(a) / sum(1.0 / (x or 0.0001) for x in a)
+    m = [(hmean(m[k]), k) for k in m]
+    m = sorted(m, key=lambda x: x[1])
+    m = sorted(m, key=lambda x: x[0], reverse=True)
+    m = [k for score, k in m]
+    m = m[:top]
+    return m
 
 #### COMMAND LINE ##################################################################################
 # The commandline() function enables command line support for a Parser.
@@ -1253,6 +1828,7 @@ def find_relations(chunked):
 #
 # The parser is then accessible from the command line:
 # python -m pattern.en.parser xml -s "Hello, my name is Dr. Sbaitso. Nice to meet you." -OTCLI
+
 
 def commandline(parse=Parser().parse):
     import optparse
@@ -1272,7 +1848,7 @@ def commandline(parse=Parser().parse):
     if o.version:
         sys.path.insert(0, os.path.join(MODULE, "..", ".."))
         from pattern import __version__
-        print __version__
+        print(__version__)
         sys.path.pop(0)
     # Either a text file (-f) or a text string (-s) must be supplied.
     s = o.file and codecs.open(o.file, "r", o.encoding).read() or o.string
@@ -1282,21 +1858,23 @@ def commandline(parse=Parser().parse):
     if s:
         explicit = False
         for option in [o.tokenize, o.tags, o.chunks, o.relations, o.lemmata]:
-            if option is not None: explicit=True; break
+            if option is not None:
+                explicit = True
+                break
         if not explicit:
-            a = {"encoding": o.encoding }
+            a = {"encoding": o.encoding}
         else:
             a = {"tokenize": o.tokenize  or False,
                      "tags": o.tags      or False,
                    "chunks": o.chunks    or False,
                 "relations": o.relations or False,
                   "lemmata": o.lemmata   or False,
-                 "encoding": o.encoding }
+                 "encoding": o.encoding}
         s = parse(s, **a)
         # The output can be either slash-formatted string or XML.
         if "xml" in arguments:
             s = Tree(s, s.tags).xml
-        print encode_utf8(s)
+        print(s)
 
 #### VERBS #########################################################################################
 
@@ -1457,10 +2035,10 @@ for i, (tense, person, number, mood, aspect, negated, aliases) in TENSES.items()
 
 # Map Penn Treebank tags to unique index.
 for tag, tense in (
-  ("VB",  0 ),  # infinitive
-  ("VBP", 1 ),  # present 1 singular
-  ("VBZ", 3 ),  # present 3 singular
-  ("VBG", 8 ),  # present participle
+  ("VB", 0),    # infinitive
+  ("VBP", 1),   # present 1 singular
+  ("VBZ", 3),   # present 3 singular
+  ("VBG", 8),   # present participle
   ("VBN", 24),  # past participle
   ("VBD", 25)): # past
     TENSES_ID[tag.lower()] = tense
@@ -1468,14 +2046,16 @@ for tag, tense in (
 # tense(tense=INFINITIVE)
 # tense(tense=(PRESENT, 3, SINGULAR))
 # tense(tense=PRESENT, person=3, number=SINGULAR, mood=INDICATIVE, aspect=IMPERFECTIVE, negated=False)
+
+
 def tense_id(*args, **kwargs):
     """ Returns the tense id for a given (tense, person, number, mood, aspect, negated).
         Aliases and compound forms (e.g., IMPERFECT) are disambiguated.
     """
     # Unpack tense given as a tuple, e.g., tense((PRESENT, 1, SG)):
     if len(args) == 1 and isinstance(args[0], (list, tuple)):
-         if args[0] not in ((PRESENT, PARTICIPLE), (PAST, PARTICIPLE)):
-             args = args[0]
+        if args[0] not in ((PRESENT, PARTICIPLE), (PAST, PARTICIPLE)):
+            args = args[0]
     # No parameters defaults to tense=INFINITIVE, tense=PRESENT otherwise.
     if len(args) == 0 and len(kwargs) == 0:
         t = INFINITIVE
@@ -1495,10 +2075,11 @@ def tense_id(*args, **kwargs):
     # Disambiguate PARTICIPLE, IMPERFECT, PRETERITE.
     # These are often considered to be tenses but are in fact tense + aspect.
     if tense == INFINITIVE:
-        person = number = mood = aspect = None; negated=False
-    if tense in ((PRESENT, PARTICIPLE), PRESENT+PARTICIPLE, PARTICIPLE, GERUND):
+        person = number = mood = aspect = None
+        negated = False
+    if tense in ((PRESENT, PARTICIPLE), PRESENT + PARTICIPLE, PARTICIPLE, GERUND):
         tense, aspect = PRESENT, PROGRESSIVE
-    if tense in ((PAST, PARTICIPLE), PAST+PARTICIPLE):
+    if tense in ((PAST, PARTICIPLE), PAST + PARTICIPLE):
         tense, aspect = PAST, PROGRESSIVE
     if tense == IMPERFECT:
         tense, aspect = PAST, IMPERFECTIVE
@@ -1525,6 +2106,7 @@ tense = tense_id
 # For unknown verbs, Verbs.find_lemma() and Verbs.find_lexeme() are called.
 # These must be implemented in a subclass with rules for unknown verbs.
 
+
 class Verbs(lazydict):
 
     def __init__(self, path="", format=[], default={}, language=None):
@@ -1533,11 +2115,11 @@ class Verbs(lazydict):
             The format defines the order of tenses (see TENSES).
             The default dictionary defines default tenses for omitted tenses.
         """
-        self._path     = path
+        self._path = path
         self._language = language
-        self._format   = dict((TENSES_ID[id], i) for i, id in enumerate(format))
-        self._default  = default
-        self._inverse  = {}
+        self._format = dict((TENSES_ID[id], i) for i, id in enumerate(format))
+        self._default = default
+        self._inverse = {}
 
     def load(self):
         # have,,,has,,having,,,,,had,had,haven't,,,hasn't,,,,,,,hadn't,hadn't
@@ -1604,7 +2186,8 @@ class Verbs(lazydict):
             a = [x for x in self[b] if x != ""]
         elif parse is True: # rule-based
             a = self.find_lexeme(b)
-        u = []; [u.append(x) for x in a if x not in u]
+        u = []
+        [u.append(x) for x in a if x not in u]
         return u
 
     def conjugate(self, verb, *args, **kwargs):
@@ -1661,8 +2244,13 @@ class Verbs(lazydict):
                 for id1, id2 in self._default.items():
                     if id2 in a:
                         a.add(id1)
-        a = (TENSES[id][:-2] for id in a)
-        a = Tenses(sorted(a))
+
+        a = list(TENSES[id][:-2] for id in a)
+
+        # In Python 2, None is always smaller than anything else while in Python 3, comparison with incompatible types yield TypeError.
+        # This is why we need to use a custom key function.
+        a = Tenses(sorted(a, key = lambda x: 0 if x[1] is None else x[1]))
+
         return a
 
     def find_lemma(self, verb):
@@ -1674,6 +2262,7 @@ class Verbs(lazydict):
         # Must be overridden in a subclass.
         # Must return the list of conjugations for the given (unknown) verb.
         return []
+
 
 class Tenses(list):
 
@@ -1700,7 +2289,7 @@ class Tenses(list):
 # negative words + positive emoticons could indicate cynicism.
 
 # Semantic labels:
-MOOD  = "mood"  # emoticons, emojis
+MOOD = "mood"  # emoticons, emojis
 IRONY = "irony" # sarcasm mark (!)
 
 NOUN, VERB, ADJECTIVE, ADVERB = \
@@ -1708,8 +2297,10 @@ NOUN, VERB, ADJECTIVE, ADVERB = \
 
 RE_SYNSET = re.compile(r"^[acdnrv][-_][0-9]+$")
 
+
 def avg(list):
     return sum(list) / float(len(list) or 1)
+
 
 class Score(tuple):
 
@@ -1720,6 +2311,7 @@ class Score(tuple):
 
     def __init__(self, polarity, subjectivity, assessments=[]):
         self.assessments = assessments
+
 
 class Sentiment(lazydict):
 
@@ -1738,7 +2330,8 @@ class Sentiment(lazydict):
         self.tokenizer   = kwargs.get("tokenizer", find_tokens)
         self.negations   = kwargs.get("negations", ("no", "not", "n't", "never"))
         self.modifiers   = kwargs.get("modifiers", ("RB",))
-        self.modifier    = kwargs.get("modifier" , lambda w: w.endswith("ly"))
+        self.modifier    = kwargs.get("modifier", lambda w: w.endswith("ly"))
+        self.ngrams      = kwargs.get("ngrams", 3)
 
     @property
     def path(self):
@@ -1787,13 +2380,13 @@ class Sentiment(lazydict):
         self._language = xml.attrib.get("language", self._language)
         # Average scores of all word senses per part-of-speech tag.
         for w in words:
-            words[w] = dict((pos, map(avg, zip(*psi))) for pos, psi in words[w].items())
+            words[w] = dict((pos, list(map(avg, zip(*psi)))) for pos, psi in words[w].items())
         # Average scores of all part-of-speech tags.
         for w, pos in words.items():
-            words[w][None] = map(avg, zip(*pos.values()))
+            words[w][None] = list(map(avg, zip(*pos.values())))
         # Average scores of all synonyms per synset.
         for id, psi in synsets.items():
-            synsets[id] = map(avg, zip(*psi))
+            synsets[id] = list(map(avg, zip(*psi)))
         dict.update(self, words)
         dict.update(self.labeler, labels)
         dict.update(self._synsets, synsets)
@@ -1820,7 +2413,7 @@ class Sentiment(lazydict):
         except KeyError: # Some WordNet id's are not zero padded.
             return tuple(self._synsets.get(re.sub(r"-0+", "-", id), (0.0, 0.0))[:2])
 
-    def __call__(self, s, negation=True, **kwargs):
+    def __call__(self, s, negation=True, ngrams=DEFAULT, **kwargs):
         """ Returns a (polarity, subjectivity)-tuple for the given sentence,
             with polarity between -1.0 and 1.0 and subjectivity between 0.0 and 1.0.
             The sentence can be a string, Synset, Text, Sentence, Chunk, Word, Document, Vector.
@@ -1834,6 +2427,7 @@ class Sentiment(lazydict):
                 s += w * score
                 n += w
             return s / float(n or 1)
+        ngrams = ngrams if ngrams != DEFAULT else self.ngrams
         # A pattern.en.wordnet.Synset.
         # Sentiment(synsets("horrible", "JJ")[0]) => (-0.6, 1.0)
         if hasattr(s, "gloss"):
@@ -1841,55 +2435,70 @@ class Sentiment(lazydict):
         # A synset id.
         # Sentiment("a-00193480") => horrible => (-0.6, 1.0)   (English WordNet)
         # Sentiment("c_267") => verschrikkelijk => (-0.9, 1.0) (Dutch Cornetto)
-        elif isinstance(s, basestring) and RE_SYNSET.match(s):
+        elif isinstance(s, str) and RE_SYNSET.match(s):
             a = [(s.synonyms[0],) + self.synset(s.id, pos=s.pos) + (None,)]
         # A string of words.
         # Sentiment("a horrible movie") => (-0.6, 1.0)
-        elif isinstance(s, basestring):
-            a = self.assessments(((w.lower(), None) for w in " ".join(self.tokenizer(s)).split()), negation)
+        elif isinstance(s, str):
+            a = self.assessments(((w.lower(), None) for w in " ".join(self.tokenizer(s)).split()), negation, ngrams)
         # A pattern.en.Text.
         elif hasattr(s, "sentences"):
-            a = self.assessments(((w.lemma or w.string.lower(), w.pos[:2]) for w in chain(*s)), negation)
+            a = self.assessments(((w.lemma or w.string.lower(), w.pos[:2]) for w in chain(*s)), negation, ngrams)
         # A pattern.en.Sentence or pattern.en.Chunk.
         elif hasattr(s, "lemmata"):
-            a = self.assessments(((w.lemma or w.string.lower(), w.pos[:2]) for w in s.words), negation)
+            a = self.assessments(((w.lemma or w.string.lower(), w.pos[:2]) for w in s.words), negation, ngrams)
         # A pattern.en.Word.
         elif hasattr(s, "lemma"):
-            a = self.assessments(((s.lemma or s.string.lower(), s.pos[:2]),), negation)
+            a = self.assessments(((s.lemma or s.string.lower(), s.pos[:2]),), negation, ngrams)
         # A pattern.vector.Document.
         # Average score = weighted average using feature weights.
         # Bag-of words is unordered: inject None between each two words
         # to stop assessments() from scanning for preceding negation & modifiers.
         elif hasattr(s, "terms"):
-            a = self.assessments(chain(*(((w, None), (None, None)) for w in s)), negation)
+            a = self.assessments(chain(*(((w, None), (None, None)) for w in s)), negation, ngrams)
             kwargs.setdefault("weight", lambda w: s.terms[w[0]])
         # A dict of (word, weight)-items.
         elif isinstance(s, dict):
-            a = self.assessments(chain(*(((w, None), (None, None)) for w in s)), negation)
+            a = self.assessments(chain(*(((w, None), (None, None)) for w in s)), negation, ngrams)
             kwargs.setdefault("weight", lambda w: s[w[0]])
         # A list of words.
         elif isinstance(s, list):
-            a = self.assessments(((w, None) for w in s), negation)
+            a = self.assessments(((w, None) for w in s), negation, ngrams)
         else:
             a = []
         weight = kwargs.get("weight", lambda w: 1)
-        return Score(polarity = avg(map(lambda (w, p, s, x): (w, p), a), weight),
-                 subjectivity = avg(map(lambda (w, p, s, x): (w, s), a), weight),
+        # Each "w" in "a" is a (words, polarity, subjectivity, label)-tuple.
+        return Score(polarity = avg(map(lambda w: (w[0], w[1]), a), weight),
+                 subjectivity = avg(map(lambda w: (w[0], w[2]), a), weight),
                   assessments = a)
 
-    def assessments(self, words=[], negation=True):
+    def assessments(self, words=[], negation=True, ngrams=DEFAULT):
         """ Returns a list of (chunk, polarity, subjectivity, label)-tuples for the given list of words:
             where chunk is a list of successive words: a known word optionally
             preceded by a modifier ("very good") or a negation ("not good").
         """
+        ngrams = ngrams if ngrams != DEFAULT else self.ngrams
+        words = list(words)
+        index = 0
         a = []
         m = None # Preceding modifier (i.e., adverb or adjective).
         n = None # Preceding negation (e.g., "not beautiful").
-        for w, pos in words:
+        while index < len(words):
+            w, pos = words[index]
             # Only assess known words, preferably by part-of-speech tag.
             # Including unknown words (polarity 0.0 and subjectivity 0.0) lowers the average.
             if w is None:
+                index += 1
                 continue
+            for i in reversed(range(1, max(1, ngrams))):
+                # Known idioms ("hit the spot").
+                if index < len(words) - i:
+                    idiom = words[index:index + i + 1]
+                    idiom = " ".join(w_pos[0] or "END-OF-NGRAM" for w_pos in idiom)
+                    if idiom in self:
+                        w, pos = idiom, None
+                        index += i
+                        break
             if w in self and pos in self[w]:
                 p, s, i = self[w][pos]
                 # Known word not preceded by a modifier ("good").
@@ -1905,7 +2514,7 @@ class Sentiment(lazydict):
                 # Known word preceded by a negation ("not really good").
                 if n is not None:
                     a[-1]["w"].insert(0, n)
-                    a[-1]["i"] = 1.0 / a[-1]["i"]
+                    a[-1]["i"] = 1.0 / (a[-1]["i"] or 1)
                     a[-1]["n"] = -1
                 # Known word may be a negation.
                 # Known word may be modifying the next word (i.e., it is a known adverb).
@@ -1939,10 +2548,12 @@ class Sentiment(lazydict):
                     a.append(dict(w=[w], p=0.0, s=1.0, i=1.0, n=1, x=IRONY))
                 # EMOTICONS: {("grin", +1.0): set((":-D", ":D"))}
                 if w.isalpha() is False and len(w) <= 5 and w not in PUNCTUATION: # speedup
-                    for (type, p), e in EMOTICONS.items():
-                        if w in imap(lambda e: e.lower(), e):
-                            a.append(dict(w=[w], p=p, s=1.0, i=1.0, n=1, x=MOOD))
-                            break
+                    for E in (EMOTICONS, EMOJI):
+                        for (type, p), e in E.items():
+                            if w in map(lambda e: e.lower(), e):
+                                a.append(dict(w=[w], p=p, s=1.0, i=1.0, n=1, x=MOOD))
+                                break
+            index += 1
         for i in range(len(a)):
             w = a[i]["w"]
             p = a[i]["p"]
@@ -1962,15 +2573,49 @@ class Sentiment(lazydict):
         if label:
             self.labeler[word] = label
 
+    def save(self, path):
+        """ Saves the lexicon as an XML-file.
+        """
+        # WordNet id's, word sense descriptions and confidence scores
+        # from a bundled XML (e.g., en/lexicon-en.xml) are not saved.
+        a = []
+        a.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+        a.append("<sentiment>")
+        for w in sorted(self):
+            for pos, (p, s, i) in self[w].items():
+                pos = pos or ""
+                if pos or len(self[w]) == 1:
+                    a.append("\t<word %s %s %s %s %s %s />" % (
+                              "form=\"%s\""   % w,
+                               "pos=\"%s\""   % pos,
+                          "polarity=\"%.2f\"" % p,
+                      "subjectivity=\"%.2f\"" % s,
+                         "intensity=\"%.2f\"" % i,
+                             "label=\"%s\""   % self.labeler.get(w, "")
+                    ))
+        a.append("</sentiment>")
+        f = open(path, "w", encoding="utf-8")
+        f.write(BOM_UTF8 + encode_utf8("\n".join(a)))
+        f.close()
+
 #### SPELLING CORRECTION ###########################################################################
 # Based on: Peter Norvig, "How to Write a Spelling Corrector", http://norvig.com/spell-correct.html
 
+
 class Spelling(lazydict):
 
-    ALPHA = "abcdefghijklmnopqrstuvwxyz"
+    # latin alphabet
+    LATIN = "abcdefghijklmnopqrstuvwxyz"
 
-    def __init__(self, path=""):
+    # cyrillic alphabet
+    CYRILLIC = 'абвгдеёжзийклмнопрстуфхцчшщьыъэюя'
+
+    def __init__(self, path="", alphabet='LATIN'):
         self._path = path
+        if alphabet == 'CYRILLIC':
+            self.alphabet = Spelling.CYRILLIC
+        else:
+            self.alphabet = Spelling.LATIN
 
     def load(self):
         for x in _read(self._path):
@@ -1995,7 +2640,7 @@ class Spelling(lazydict):
             model[w] = w in model and model[w] + 1 or 1
         model = ("%s %s" % (k, v) for k, v in sorted(model.items()))
         model = "\n".join(model)
-        f = open(path, "w")
+        f = open(path, "w", encoding="utf-8")
         f.write(model)
         f.close()
 
@@ -2008,8 +2653,8 @@ class Spelling(lazydict):
         delete, transpose, replace, insert = (
             [a + b[1:] for a, b in split if b],
             [a + b[1] + b[0] + b[2:] for a, b in split if len(b) > 1],
-            [a + c + b[1:] for a, b in split for c in Spelling.ALPHA if b],
-            [a + c + b[0:] for a, b in split for c in Spelling.ALPHA]
+            [a + c + b[1:] for a, b in split for c in self.alphabet if b],
+            [a + c + b[0:] for a, b in split for c in self.alphabet]
         )
         return set(delete + transpose + replace + insert)
 
@@ -2041,6 +2686,7 @@ class Spelling(lazydict):
                   or self._known(self._edit1(w)) \
                   or self._known(self._edit2(w)) \
                   or [w]
+
         candidates = [(self.get(c, 0.0), c) for c in candidates]
         s = float(sum(p for p, w in candidates) or 1)
         candidates = sorted(((p / s, w) for p, w in candidates), reverse=True)
@@ -2050,22 +2696,30 @@ class Spelling(lazydict):
 #### MULTILINGUAL ##################################################################################
 # The default functions in each language submodule, with an optional language parameter:
 # from pattern.text import parse
-# print parse("The cat sat on the mat.", language="en")
-# print parse("De kat zat op de mat.", language="nl")
+# print(parse("The cat sat on the mat.", language="en"))
+# print(parse("De kat zat op de mat.", language="nl"))
 
 LANGUAGES = ["en", "es", "de", "fr", "it", "nl"]
 
 _modules = {}
+
+
 def _module(language):
     """ Returns the given language module (e.g., "en" => pattern.en).
     """
-    return _modules.setdefault(language, __import__(language, globals(), {}, [], -1))
+
+    if sys.version > '3':
+        return _modules.setdefault(language, __import__(language, globals(), {}, [], 1))
+    else:
+        return _modules.setdefault(language, __import__(language, globals(), {}, [], -1))
+
 
 def _multilingual(function, *args, **kwargs):
     """ Returns the value from the function with the given name in the given language module.
         By default, language="en".
     """
     return getattr(_module(kwargs.pop("language", "en")), function)(*args, **kwargs)
+
 
 def language(s):
     """ Returns a (language, confidence)-tuple for the given string.
@@ -2077,39 +2731,58 @@ def language(s):
     for xx in LANGUAGES:
         lexicon = _module(xx).__dict__["lexicon"]
         p[xx] = sum(1 for w in s if w in lexicon) / n
-    return max(p.items(), key=lambda (k, v): (v, int(k == "en")))
-    
+    return max(p.items(), key=lambda kv: (kv[1], int(kv[0] == "en")))
+
 lang = language
+
 
 def tokenize(*args, **kwargs):
     return _multilingual("tokenize", *args, **kwargs)
 
+
 def parse(*args, **kwargs):
     return _multilingual("parse", *args, **kwargs)
+
 
 def parsetree(*args, **kwargs):
     return _multilingual("parsetree", *args, **kwargs)
 
+
 def split(*args, **kwargs):
     return _multilingual("split", *args, **kwargs)
+
 
 def tag(*args, **kwargs):
     return _multilingual("tag", *args, **kwargs)
 
+
+def keywords(*args, **kwargs):
+    return _multilingual("keywords", *args, **kwargs)
+
+
+def suggest(*args, **kwargs):
+    return _multilingual("suggest", *args, **kwargs)
+
+
 def sentiment(*args, **kwargs):
     return _multilingual("sentiment", *args, **kwargs)
+
 
 def singularize(*args, **kwargs):
     return _multilingual("singularize", *args, **kwargs)
 
+
 def pluralize(*args, **kwargs):
     return _multilingual("pluralize", *args, **kwargs)
+
 
 def conjugate(*args, **kwargs):
     return _multilingual("conjugate", *args, **kwargs)
 
+
 def predicative(*args, **kwargs):
     return _multilingual("predicative", *args, **kwargs)
+
 
 def suggest(*args, **kwargs):
     return _multilingual("suggest", *args, **kwargs)

@@ -8,6 +8,13 @@
 ####################################################################################################
 # Spanish linguistical tools using fast regular expressions.
 
+from __future__ import unicode_literals
+from __future__ import division
+
+from builtins import str, bytes, dict, int
+from builtins import map, zip, filter
+from builtins import object, range
+
 import os
 import sys
 
@@ -33,6 +40,10 @@ from pattern.text import (
 from pattern.text.tree import (
     Tree, Text, Sentence, Slice, Chunk, PNPChunk, Chink, Word, table,
     SLASH, WORD, POS, CHUNK, PNP, REL, ANCHOR, LEMMA, AND, OR
+)
+# Import spelling base class.
+from pattern.text import (
+    Spelling
 )
 # Import verb tenses.
 from pattern.text import (
@@ -60,10 +71,10 @@ sys.path.pop(0)
 #--- SPANISH PARSER --------------------------------------------------------------------------------
 # The Spanish parser (accuracy 92%) is based on the Spanish portion Wikicorpus v.1.0 (FDL license),
 # using 1.5M words from the tagged sections 10000-15000.
-# Samuel Reese, Gemma Boleda, Montse Cuadros, Lluís Padró, German Rigau. 
-# Wikicorpus: A Word-Sense Disambiguated Multilingual Wikipedia Corpus. 
-# Proceedings of 7th Language Resources and Evaluation Conference (LREC'10), 
-# La Valleta, Malta. May, 2010. 
+# Samuel Reese, Gemma Boleda, Montse Cuadros, Lluís Padró, German Rigau.
+# Wikicorpus: A Word-Sense Disambiguated Multilingual Wikipedia Corpus.
+# Proceedings of 7th Language Resources and Evaluation Conference (LREC'10),
+# La Valleta, Malta. May, 2010.
 # http://www.lsi.upc.edu/~nlp/wikicorpus/
 
 # The lexicon uses the Parole tagset:
@@ -93,7 +104,7 @@ parole = {
    "Fpa": "(",    # (
    "Fpt": ")",    # )
     "Fx": ".",    # ;
-    "Fz": ".",    # 
+    "Fz": ".",    #
      "I": "UH",   # ehm
     "NC": "NN",   # islam
    "NCS": "NN",   # guitarra
@@ -131,11 +142,13 @@ parole = {
     "Zp": "CD",   # 1,7%
 }
 
+
 def parole2penntreebank(token, tag):
     """ Converts a Parole tag to a Penn Treebank II tag.
         For example: importantísimo/AQ => importantísimo/ADJ
     """
     return (token, parole.get(tag, tag))
+
 
 def parole2universal(token, tag):
     """ Converts a Parole tag to a universal tag.
@@ -150,12 +163,13 @@ def parole2universal(token, tag):
     return penntreebank2universal(*parole2penntreebank(token, tag))
 
 ABBREVIATIONS = set((
-    u"a.C.", u"a.m.", u"apdo.", u"aprox.", u"Av.", u"Avda.", u"c.c.", u"D.", u"Da.", u"d.C.", 
-    u"d.j.C.", u"dna.", u"Dr.", u"Dra.", u"esq.", u"etc.", u"Gob.", u"h.", u"m.n.", u"no.", 
-    u"núm.", u"pág.", u"P.D.", u"P.S.", u"p.ej.", u"p.m.", u"Profa.", u"q.e.p.d.", u"S.A.", 
-    u"S.L.", u"Sr.", u"Sra.", u"Srta.", u"s.s.s.", u"tel.", u"Ud.", u"Vd.", u"Uds.", u"Vds.", 
-    u"v.", u"vol.", u"W.C."
+    "a.C.", "a.m.", "apdo.", "aprox.", "Av.", "Avda.", "c.c.", "D.", "Da.", "d.C.",
+    "d.j.C.", "dna.", "Dr.", "Dra.", "esq.", "etc.", "Gob.", "h.", "m.n.", "no.",
+    "núm.", "pág.", "P.D.", "P.S.", "p.ej.", "p.m.", "Profa.", "q.e.p.d.", "S.A.",
+    "S.L.", "Sr.", "Sra.", "Srta.", "s.s.s.", "tel.", "Ud.", "Vd.", "Uds.", "Vds.",
+    "v.", "vol.", "W.C."
 ))
+
 
 def find_lemmata(tokens):
     """ Annotates the tokens with lemmata for plural nouns and conjugated verbs,
@@ -173,7 +187,8 @@ def find_lemmata(tokens):
             lemma = conjugate(word, INFINITIVE) or word
         token.append(lemma.lower())
     return tokens
-    
+
+
 class Parser(_Parser):
 
     def find_tokens(self, tokens, **kwargs):
@@ -194,8 +209,9 @@ class Parser(_Parser):
         return _Parser.find_tags(self, tokens, **kwargs)
 
 parser = Parser(
-     lexicon = os.path.join(MODULE, "es-lexicon.txt"), 
-  morphology = os.path.join(MODULE, "es-morphology.txt"), 
+     lexicon = os.path.join(MODULE, "es-lexicon.txt"),
+   frequency = os.path.join(MODULE, "es-frequency.txt"),
+  morphology = os.path.join(MODULE, "es-morphology.txt"),
      context = os.path.join(MODULE, "es-context.txt"),
      default = ("NCS", "NP", "Z"),
     language = "es"
@@ -203,26 +219,35 @@ parser = Parser(
 
 lexicon = parser.lexicon # Expose lexicon.
 
+spelling = Spelling(
+        path = os.path.join(MODULE, "es-spelling.txt")
+)
+
+
 def tokenize(s, *args, **kwargs):
     """ Returns a list of sentences, where punctuation marks have been split from words.
     """
     return parser.find_tokens(s, *args, **kwargs)
+
 
 def parse(s, *args, **kwargs):
     """ Returns a tagged Unicode string.
     """
     return parser.parse(s, *args, **kwargs)
 
+
 def parsetree(s, *args, **kwargs):
     """ Returns a parsed Text from the given string.
     """
     return Text(parse(s, *args, **kwargs))
 
+
 def tree(s, token=[WORD, POS, CHUNK, PNP, REL, LEMMA]):
     """ Returns a parsed Text from the given parsed string.
     """
     return Text(s, token)
-    
+
+
 def tag(s, tokenize=True, encoding="utf-8", **kwargs):
     """ Returns a list of (token, tag)-tuples from the given string.
     """
@@ -231,6 +256,22 @@ def tag(s, tokenize=True, encoding="utf-8", **kwargs):
         for token in sentence:
             tags.append((token[0], token[1]))
     return tags
+
+
+def keywords(s, top=10, **kwargs):
+    """ Returns a sorted list of keywords in the given string.
+    """
+    return parser.find_keywords(s, **dict({
+        "frequency": parser.frequency,
+              "top": top,
+              "pos": ("NN",),
+           "ignore": ("rt",)}, **kwargs))
+
+
+def suggest(w):
+    """ Returns a list of (word, confidence)-tuples of spelling corrections.
+    """
+    return spelling.suggest(w)
 
 split = tree # Backwards compatibility.
 

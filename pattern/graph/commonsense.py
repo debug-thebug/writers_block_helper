@@ -6,32 +6,57 @@
 
 ####################################################################################################
 
-from codecs    import BOM_UTF8
-from urllib    import urlopen
-from itertools import chain
+from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import unicode_literals
+from __future__ import division
 
-from __init__ import Graph, Node, Edge, bfs
-from __init__ import WEIGHT, CENTRALITY, EIGENVECTOR, BETWEENNESS
+from builtins import str, bytes, dict, int
+from builtins import map, zip, filter
+from builtins import object, range
+
+from codecs import BOM_UTF8
+from itertools import chain
+from functools import cmp_to_key
+
+from io import open
+
+try:
+    # Python 2
+    from urllib import urlopen
+except ImportError:
+    # Python 3
+    from urllib.request import urlopen
+
+from .__init__ import Graph, Node, Edge, bfs
+from .__init__ import WEIGHT, CENTRALITY, EIGENVECTOR, BETWEENNESS
 
 import os
+import sys
 
 try:
     MODULE = os.path.dirname(os.path.realpath(__file__))
 except:
     MODULE = ""
 
+if sys.version > "3":
+    BOM_UTF8 = str(BOM_UTF8.decode("utf-8"))
+else:
+    BOM_UTF8 = BOM_UTF8.decode("utf-8")
+
 #### COMMONSENSE SEMANTIC NETWORK ##################################################################
 
 #--- CONCEPT ---------------------------------------------------------------------------------------
 
+
 class Concept(Node):
-    
+
     def __init__(self, *args, **kwargs):
         """ A concept in the sematic network.
         """
         Node.__init__(self, *args, **kwargs)
         self._properties = None
-    
+
     @property
     def halo(self, depth=2):
         """ Returns the concept halo: a list with this concept + surrounding concepts.
@@ -39,7 +64,7 @@ class Concept(Node):
             since the halo will include latent properties linked to nearby concepts.
         """
         return self.flatten(depth=depth)
-        
+
     @property
     def properties(self):
         """ Returns the top properties in the concept halo, sorted by betweenness centrality.
@@ -52,8 +77,10 @@ class Concept(Node):
             self._properties = p
         return self._properties
 
+
 def halo(concept, depth=2):
     return concept.flatten(depth=depth)
+
 
 def properties(concept, depth=2, centrality=BETWEENNESS):
     g = concept.graph.copy(nodes=halo(concept, depth))
@@ -63,8 +90,9 @@ def properties(concept, depth=2, centrality=BETWEENNESS):
 
 #--- RELATION --------------------------------------------------------------------------------------
 
+
 class Relation(Edge):
-    
+
     def __init__(self, *args, **kwargs):
         """ A relation between two concepts, with an optional context.
             For example, "Felix is-a cat" is in the "media" context, "tiger is-a cat" in "nature".
@@ -88,8 +116,9 @@ COMMONALITY = (
 
 #--- COMMONSENSE -----------------------------------------------------------------------------------
 
+
 class Commonsense(Graph):
-    
+
     def __init__(self, data=os.path.join(MODULE, "commonsense.csv"), **kwargs):
         """ A semantic network of commonsense, using different relation types:
             - is-a,
@@ -105,24 +134,23 @@ class Commonsense(Graph):
         # Load data from the given path,
         # a CSV-file of (concept1, relation, concept2, context, weight)-items.
         if data is not None:
-            s = open(data).read()
+            s = open(data, encoding = 'utf-8').read()
             s = s.strip(BOM_UTF8)
-            s = s.decode("utf-8")
             s = ((v.strip("\"") for v in r.split(",")) for r in s.splitlines())
             for concept1, relation, concept2, context, weight in s:
-                self.add_edge(concept1, concept2, 
-                    type = relation, 
-                 context = context, 
-                  weight = min(int(weight)*0.1, 1.0))
+                self.add_edge(concept1, concept2,
+                    type = relation,
+                 context = context,
+                  weight = min(int(weight) * 0.1, 1.0))
 
     @property
     def concepts(self):
         return self.nodes
-        
+
     @property
     def relations(self):
         return self.edges
-        
+
     @property
     def properties(self):
         """ Yields all concepts that are properties (i.e., adjectives).
@@ -133,21 +161,21 @@ class Commonsense(Graph):
             self._properties = (e for e in self.edges if e.context == "properties")
             self._properties = set(chain(*((e.node1.id, e.node2.id) for e in self._properties)))
         return self._properties
-    
+
     def add_node(self, id, *args, **kwargs):
         """ Returns a Concept (Node subclass).
         """
         self._properties = None
         kwargs.setdefault("base", Concept)
         return Graph.add_node(self, id, *args, **kwargs)
-        
+
     def add_edge(self, id1, id2, *args, **kwargs):
         """ Returns a Relation between two concepts (Edge subclass).
         """
         self._properties = None
         kwargs.setdefault("base", Relation)
         return Graph.add_edge(self, id1, id2, *args, **kwargs)
-        
+
     def remove(self, x):
         self._properties = None
         Graph.remove(self, x)
@@ -160,9 +188,9 @@ class Commonsense(Graph):
             1) function(concept) returns a list of salient properties,
             2) function(edge) returns the cost for traversing this edge (0.0-1.0).
         """
-        if isinstance(concept1, basestring):
+        if isinstance(concept1, str):
             concept1 = self[concept1]
-        if isinstance(concept2, basestring):
+        if isinstance(concept2, str):
             concept2 = self[concept2]
         if isinstance(concept1, Node):
             concept1 = heuristic[0](concept1)
@@ -179,12 +207,12 @@ class Commonsense(Graph):
                 p = self.shortest_path(p1, p2, heuristic=h)
                 w += 1.0 / (p is None and 1e10 or len(p))
         return w / k
-        
+
     def nearest_neighbors(self, concept, concepts=[], k=3):
         """ Returns the k most similar concepts from the given list.
         """
         return sorted(concepts, key=lambda candidate: self.similarity(concept, candidate, k), reverse=True)
-        
+
     similar = neighbors = nn = nearest_neighbors
 
     def taxonomy(self, concept, depth=3, fringe=2):
@@ -201,16 +229,17 @@ class Commonsense(Graph):
         g = g.fringe(depth=fringe)
         g = [self[n.id] for n in g if n != concept]
         return g
-        
+
     field = semantic_field = taxonomy
 
 #g = Commonsense()
-#print g.nn("party", g.field("animal"))
-#print g.nn("creepy", g.field("animal"))
+#print(g.nn("party", g.field("animal")))
+#print(g.nn("creepy", g.field("animal")))
 
 #### COMMONSENSE DATA ##############################################################################
 
 #--- NODEBOX.NET/PERCEPTION ------------------------------------------------------------------------
+
 
 def download(path=os.path.join(MODULE, "commonsense.csv"), threshold=50):
     """ Downloads commonsense data from http://nodebox.net/perception.
@@ -228,7 +257,7 @@ def download(path=os.path.join(MODULE, "commonsense.csv"), threshold=50):
     # Iterate authors sorted by number of contributions.
     # 1) Authors with 50+ contributions can define new relations and context.
     # 2) Authors with 50- contributions (or robots) can only reinforce existing relations.
-    a = sorted(a.items(), cmp=lambda v1, v2: len(v2[1]) - len(v1[1]))
+    a = sorted(a.items(), key=cmp_to_key(lambda v1, v2: len(v2[1]) - len(v1[1])))
     r = {}
     for author, relations in a:
         if author == "" or author.startswith("robots@"):
@@ -236,7 +265,7 @@ def download(path=os.path.join(MODULE, "commonsense.csv"), threshold=50):
         if len(relations) < threshold:
             break
         # Sort latest-first (we prefer more recent relation types).
-        relations = sorted(relations, cmp=lambda r1, r2: r1[-1] > r2[-1])
+        relations = sorted(relations, key=cmp_to_key(lambda r1, r2: r1[-1] > r2[-1]))
         # 1) Define new relations.
         for concept1, relation, concept2, context, weight, author, date in relations:
             id = (concept1, relation, concept2)
@@ -255,11 +284,12 @@ def download(path=os.path.join(MODULE, "commonsense.csv"), threshold=50):
     for (concept1, relation, concept2), (context, weight) in r.items():
         s.append("\"%s\",\"%s\",\"%s\",\"%s\",%s" % (
             concept1, relation, concept2, context, weight))
-    f = open(path, "w")
+    f = open(path, "w", encoding = 'utf-8')
     f.write(BOM_UTF8)
-    f.write("\n".join(s).encode("utf-8"))
+    f.write("\n".join(s))
     f.close()
-    
+
+
 def json():
     """ Returns a JSON-string with the data from commonsense.csv.
         Each relation is encoded as a [concept1, relation, concept2, context, weight] list.
@@ -278,4 +308,4 @@ def json():
     return "commonsense = [%s];" % ", ".join(s)
 
 #download("commonsense.csv", threshold=50)
-#open("commonsense.js", "w").write(json())
+#open("commonsense.js", "w", encoding = 'utf-8').write(json())

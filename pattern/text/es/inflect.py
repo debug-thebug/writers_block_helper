@@ -17,6 +17,13 @@
 # 87% for Verbs.find_lexeme() (0.55 regular 99% + 0.45 irregular 72%)
 # 93% for predicative()
 
+from __future__ import unicode_literals
+from __future__ import division
+
+from builtins import str, bytes, dict, int
+from builtins import map, zip, filter
+from builtins import object, range
+
 import os
 import sys
 import re
@@ -25,7 +32,7 @@ try:
     MODULE = os.path.dirname(os.path.realpath(__file__))
 except:
     MODULE = ""
-    
+
 sys.path.insert(0, os.path.join(MODULE, "..", "..", "..", ".."))
 
 from pattern.text import Verbs as _Verbs
@@ -47,8 +54,9 @@ VOWELS = ("a", "e", "i", "o", "u")
 re_vowel = re.compile(r"a|e|i|o|u", re.I)
 is_vowel = lambda ch: ch in VOWELS
 
+
 def normalize(vowel):
-    return {u"á":"a", u"é":"e", u"í":"i", u"ó":"o", u"ú":"u"}.get(vowel, vowel)
+    return {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u"}.get(vowel, vowel)
 
 #### ARTICLE #######################################################################################
 # Spanish inflection of depends on gender and number.
@@ -58,13 +66,14 @@ MASCULINE, FEMININE, NEUTER, PLURAL = \
     MALE, FEMALE, NEUTRAL, PLURAL = \
         M, F, N, PL = "m", "f", "n", "p"
 
+
 def definite_article(word, gender=MALE):
     """ Returns the definite article (el/la/los/las) for a given word.
     """
     if MASCULINE in gender:
         return PLURAL in gender and "los" or "el"
     return PLURAL in gender and "las" or "la"
-        
+
 
 def indefinite_article(word, gender=MALE):
     """ Returns the indefinite article (un/una/unos/unas) for a given word.
@@ -73,8 +82,9 @@ def indefinite_article(word, gender=MALE):
         return PLURAL in gender and "unos" or "un"
     return PLURAL in gender and "unas" or "una"
 
-DEFINITE   = "definite"
+DEFINITE = "definite"
 INDEFINITE = "indefinite"
+
 
 def article(word, function=INDEFINITE, gender=MALE):
     """ Returns the indefinite (un) or definite (el) article for the given word.
@@ -84,6 +94,7 @@ def article(word, function=INDEFINITE, gender=MALE):
         or indefinite_article(word, gender)
 _article = article
 
+
 def referenced(word, article=INDEFINITE, gender=MALE):
     """ Returns a string with the article + the word.
     """
@@ -92,11 +103,12 @@ def referenced(word, article=INDEFINITE, gender=MALE):
 #### PLURALIZE #####################################################################################
 
 plural_irregular = {
-     u"mamá": u"mamás",
-     u"papá": u"papás",
-     u"sofá": u"sofás",     
-   u"dominó": u"dominós",
+     "mamá": "mamás",
+     "papá": "papás",
+     "sofá": "sofás",
+   "dominó": "dominós",
 }
+
 
 def pluralize(word, pos=NOUN, custom={}):
     """ Returns the plural of a given word.
@@ -118,45 +130,46 @@ def pluralize(word, pos=NOUN, custom={}):
     if w.endswith((
       "idad",
       "esis", "isis", "osis",
-      "dica", u"grafía", u"logía")):
+      "dica", "grafía", "logía")):
         return w
     # Words ending in a vowel get -s: gato => gatos.
-    if w.endswith(VOWELS) or w.endswith(u"é"):
+    if w.endswith(VOWELS) or w.endswith("é"):
         return w + "s"
     # Words ending in a stressed vowel get -s: hindú => hindúes.
-    if w.endswith((u"á", u"é", u"í", u"ó", u"ú")):
+    if w.endswith(("á", "é", "í", "ó", "ú")):
         return w + "es"
     # Words ending in -és get -eses: holandés => holandeses.
-    if w.endswith(u"és"):
+    if w.endswith("és"):
         return w[:-2] + "eses"
     # Words ending in -s preceded by an unstressed vowel: gafas => gafas.
-    if w.endswith(u"s") and len(w) > 3 and is_vowel(w[-2]):
+    if w.endswith("s") and len(w) > 3 and is_vowel(w[-2]):
         return w
     # Words ending in -z get -ces: luz => luces
-    if w.endswith(u"z"):
+    if w.endswith("z"):
         return w[:-1] + "ces"
     # Words that change vowel stress: graduación => graduaciones.
     for a, b in (
-      (u"án", "anes"),
-      (u"én", "enes"),
-      (u"ín", "ines"),
-      (u"ón", "ones"),
-      (u"ún", "unes")):
+      ("án", "anes"),
+      ("én", "enes"),
+      ("ín", "ines"),
+      ("ón", "ones"),
+      ("ún", "unes")):
         if w.endswith(a):
             return w[:-2] + b
     # Words ending in a consonant get -es.
     return w + "es"
 
-#print pluralize(u"libro")  # libros
-#print pluralize(u"señor")  # señores
-#print pluralize(u"ley")    # leyes
-#print pluralize(u"mes")    # meses
-#print pluralize(u"luz")    # luces
-#print pluralize(u"inglés") # ingleses
-#print pluralize(u"rubí")   # rubíes
-#print pluralize(u"papá")   # papás
+#print(pluralize("libro"))  # libros
+#print(pluralize("señor"))  # señores
+#print(pluralize("ley"))    # leyes
+#print(pluralize("mes"))    # meses
+#print(pluralize("luz"))    # luces
+#print(pluralize("inglés")) # ingleses
+#print(pluralize("rubí"))   # rubíes
+#print(pluralize("papá"))   # papás
 
 #### SINGULARIZE ###################################################################################
+
 
 def singularize(word, pos=NOUN, custom={}):
     if word in custom:
@@ -174,12 +187,12 @@ def singularize(word, pos=NOUN, custom={}):
         return w[:-1]
     # gestiones => gestión
     for a, b in (
-      ("anes", u"án"),
-      ("enes", u"én"),
-      ("eses", u"és"),
-      ("ines", u"ín"),
-      ("ones", u"ón"),
-      ("unes", u"ún")):
+      ("anes", "án"),
+      ("enes", "én"),
+      ("eses", "és"),
+      ("ines", "ín"),
+      ("ones", "ón"),
+      ("unes", "ún")):
         if w.endswith(a):
             return w[:-4] + b
     # hipotesis => hipothesis
@@ -199,54 +212,55 @@ def singularize(word, pos=NOUN, custom={}):
 #### VERB CONJUGATION ##############################################################################
 
 verb_irregular_inflections = [
-    (u"yéramos", "ir"   ), ( "cisteis", "cer"   ), ( "tuviera", "tener"), ( "ndieron", "nder" ),
-    ( "ndiendo", "nder" ), (u"tándose", "tarse" ), ( "ndieran", "nder" ), ( "ndieras", "nder" ),
-    (u"izaréis", "izar" ), ( "disteis", "der"   ), ( "irtiera", "ertir"), ( "pusiera", "poner"),
-    ( "endiste", "ender"), ( "laremos", "lar"   ), (u"ndíamos", "nder" ), (u"icaréis", "icar" ),
-    (u"dábamos", "dar"  ), ( "intiera", "entir" ), ( "iquemos", "icar" ), (u"jéramos", "cir"  ),
-    ( "dierais", "der"  ), ( "endiera", "ender" ), (u"iéndose", "erse" ), ( "jisteis", "cir"  ),
-    ( "cierais", "cer"  ), (u"ecíamos", "ecer"  ), ( u"áramos", "ar"   ), ( u"ríamos", "r"    ),
-    ( u"éramos", "r"    ), ( u"iríais", "ir"    ), (   "temos", "tar"  ), (   "steis", "r"    ),
+    ( "yéramos", "ir"   ), ( "cisteis", "cer"   ), ( "tuviera", "tener"), ( "ndieron", "nder" ),
+    ( "ndiendo", "nder" ), ( "tándose", "tarse" ), ( "ndieran", "nder" ), ( "ndieras", "nder" ),
+    ( "izaréis", "izar" ), ( "disteis", "der"   ), ( "irtiera", "ertir"), ( "pusiera", "poner"),
+    ( "endiste", "ender"), ( "laremos", "lar"   ), ( "ndíamos", "nder" ), ( "icaréis", "icar" ),
+    ( "dábamos", "dar"  ), ( "intiera", "entir" ), ( "iquemos", "icar" ), ( "jéramos", "cir"  ),
+    ( "dierais", "der"  ), ( "endiera", "ender" ), ( "iéndose", "erse" ), ( "jisteis", "cir"  ),
+    ( "cierais", "cer"  ), ( "ecíamos", "ecer"  ), ( "áramos", "ar"    ), ( "ríamos", "r"     ),
+    ( "éramos", "r"     ), ( "iríais", "ir"     ), (   "temos", "tar"  ), (   "steis", "r"    ),
     (   "ciera", "cer"  ), (   "erais", "r"     ), (   "timos", "tir"  ), (   "uemos", "ar"   ),
-    (   "tiera", "tir"  ), (   "bimos", "bir"   ), (  u"ciéis", "ciar" ), (   "gimos", "gir"  ),
-    (   "jiste", "cir"  ), (   "mimos", "mir"   ), (  u"guéis", "gar"  ), (  u"stéis", "star" ),
-    (   "jimos", "cir"  ), (  u"inéis", "inar"  ), (   "jemos", "jar"  ), (   "tenga", "tener"),
-    (  u"quéis", "car"  ), (  u"bíais", "bir"   ), (   "jeron", "cir"  ), (  u"uíais", "uir"  ),
-    (  u"ntéis", "ntar" ), (   "jeras", "cir"   ), (   "jeran", "cir"  ), (  u"ducía", "ducir"),
+    (   "tiera", "tir"  ), (   "bimos", "bir"   ), (  "ciéis", "ciar"  ), (   "gimos", "gir"  ),
+    (   "jiste", "cir"  ), (   "mimos", "mir"   ), (  "guéis", "gar"   ), (  "stéis", "star"  ),
+    (   "jimos", "cir"  ), (  "inéis", "inar"   ), (   "jemos", "jar"  ), (   "tenga", "tener"),
+    (  "quéis", "car"   ), (  "bíais", "bir"    ), (   "jeron", "cir"  ), (  "uíais", "uir"   ),
+    (  "ntéis", "ntar"  ), (   "jeras", "cir"   ), (   "jeran", "cir"  ), (  "ducía", "ducir" ),
     (   "yendo", "ir"   ), (   "eemos", "ear"   ), (   "ierta", "ertir"), (   "ierte", "ertir"),
-    (   "nemos", "nar"  ), (  u"ngáis", "ner"   ), (   "liera", "ler"  ), (  u"endió", "ender"),
-    (  u"uyáis", "uir"  ), (   "memos", "mar"   ), (   "ciste", "cer"  ), (   "ujera", "ucir" ),
-    (   "uimos", "uir"  ), (   "ienda", "ender" ), (  u"lléis", "llar" ), (   "iemos", "iar"  ),
-    (   "iende", "ender"), (   "rimos", "rir"   ), (   "semos", "sar"  ), (  u"itéis", "itar" ),
-    (  u"gíais", "gir"  ), (  u"ndáis", "nder"  ), (  u"tíais", "tir"  ), (   "demos", "dar"  ),
-    (   "lemos", "lar"  ), (   "ponga", "poner" ), (   "yamos", "ir"   ), (  u"icéis", "izar" ),
-    (    "bais", "r"    ), (   u"rías", "r"     ), (   u"rían", "r"    ), (   u"iría", "ir"   ),
-    (    "eran", "r"    ), (    "eras", "r"     ), (   u"irán", "ir"   ), (   u"irás", "ir"   ),
-    (    "ongo", "oner" ), (    "aiga", "aer"   ), (   u"ímos", "ir"   ), (   u"ibía", "ibir" ),
-    (    "diga", "decir"), (   u"edía", "edir"  ), (    "orte", "ortar"), (   u"guió", "guir" ),
-    (    "iega", "egar" ), (    "oren", "orar"  ), (    "ores", "orar" ), (   u"léis", "lar"  ),
-    (    "irme", "irmar"), (    "siga", "seguir"), (   u"séis", "sar"  ), (   u"stré", "strar"),
+    (   "nemos", "nar"  ), (  "ngáis", "ner"    ), (   "liera", "ler"  ), (  "endió", "ender" ),
+    (  "uyáis", "uir"   ), (   "memos", "mar"   ), (   "ciste", "cer"  ), (   "ujera", "ucir" ),
+    (   "uimos", "uir"  ), (   "ienda", "ender" ), (  "lléis", "llar"  ), (   "iemos", "iar"  ),
+    (   "iende", "ender"), (   "rimos", "rir"   ), (   "semos", "sar"  ), (  "itéis", "itar"  ),
+    (  "gíais", "gir"   ), (  "ndáis", "nder"   ), (  "tíais", "tir"   ), (   "demos", "dar"  ),
+    (   "lemos", "lar"  ), (   "ponga", "poner" ), (   "yamos", "ir"   ), (  "icéis", "izar"  ),
+    (    "bais", "r"    ), (   "rías", "r"      ), (   "rían", "r"     ), (   "iría", "ir"    ),
+    (    "eran", "r"    ), (    "eras", "r"     ), (   "irán", "ir"    ), (   "irás", "ir"    ),
+    (    "ongo", "oner" ), (    "aiga", "aer"   ), (   "ímos", "ir"    ), (   "ibía", "ibir"  ),
+    (    "diga", "decir"), (   "edía", "edir"   ), (    "orte", "ortar"), (   "guió", "guir"  ),
+    (    "iega", "egar" ), (    "oren", "orar"  ), (    "ores", "orar" ), (   "léis", "lar"   ),
+    (    "irme", "irmar"), (    "siga", "seguir"), (   "séis", "sar"   ), (   "stré", "strar" ),
     (    "cien", "ciar" ), (    "cies", "ciar"  ), (    "dujo", "ducir"), (    "eses", "esar" ),
-    (    "esen", "esar" ), (    "coja", "coger" ), (    "lice", "lizar"), (   u"tías", "tir"  ),
-    (   u"tían", "tir"  ), (    "pare", "parar" ), (    "gres", "grar" ), (    "gren", "grar" ),
-    (    "tuvo", "tener"), (   u"uían", "uir"   ), (   u"uías", "uir"  ), (    "quen", "car"  ),
-    (    "ques", "car"  ), (   u"téis", "tar"   ), (    "iero", "erir" ), (    "iere", "erir" ),
+    (    "esen", "esar" ), (    "coja", "coger" ), (    "lice", "lizar"), (   "tías", "tir"   ),
+    (   "tían", "tir"   ), (    "pare", "parar" ), (    "gres", "grar" ), (    "gren", "grar" ),
+    (    "tuvo", "tener"), (   "uían", "uir"    ), (   "uías", "uir"   ), (    "quen", "car"  ),
+    (    "ques", "car"  ), (   "téis", "tar"    ), (    "iero", "erir" ), (    "iere", "erir" ),
     (    "uche", "uchar"), (    "tuve", "tener" ), (    "inen", "inar" ), (    "pire", "pirar"),
-    (   u"reía", "reir" ), (    "uste", "ustar" ), (   u"ibió", "ibir" ), (    "duce", "ducir"),
+    (   "reía", "reir"  ), (    "uste", "ustar" ), (   "ibió", "ibir"  ), (    "duce", "ducir"),
     (    "icen", "izar" ), (    "ices", "izar"  ), (    "ines", "inar" ), (    "ires", "irar" ),
     (    "iren", "irar" ), (    "duje", "ducir" ), (    "ille", "illar"), (    "urre", "urrir"),
-    (    "tido", "tir"  ), (   u"ndió", "nder"  ), (    "uido", "uir"  ), (    "uces", "ucir" ),
-    (    "ucen", "ucir" ), (   u"iéis", "iar"   ), (   u"eció", "ecer" ), (   u"jéis", "jar"  ),
-    (    "erve", "ervar"), (    "uyas", "uir"   ), (    "uyan", "uir"  ), (    u"tía", "tir"  ),
-    (    u"uía", "uir"  ), (     "aos", "arse"  ), (     "gue", "gar"  ), (    u"qué", "car"  ),
+    (    "tido", "tir"  ), (   "ndió", "nder"   ), (    "uido", "uir"  ), (    "uces", "ucir" ),
+    (    "ucen", "ucir" ), (   "iéis", "iar"    ), (   "eció", "ecer"  ), (   "jéis", "jar"   ),
+    (    "erve", "ervar"), (    "uyas", "uir"   ), (    "uyan", "uir"  ), (    "tía", "tir"   ),
+    (    "uía", "uir"   ), (     "aos", "arse"  ), (     "gue", "gar"  ), (    "qué", "car"   ),
     (     "que", "car"  ), (     "rse", "rse"   ), (     "ste", "r"    ), (     "era", "r"    ),
-    (    u"tió", "tir"  ), (     "ine", "inar"  ), (     u"ré", "r"    ), (      "ya", "ir"   ),
-    (      "ye", "ir"   ), (     u"tí", "tir"   ), (     u"cé", "zar"  ), (      "ie", "iar"  ),
-    (      "id", "ir"   ), (     u"ué", "ar"    ),
+    (    "tió", "tir"   ), (     "ine", "inar"  ), (     "ré", "r"     ), (      "ya", "ir"   ),
+    (      "ye", "ir"   ), (     "tí", "tir"    ), (     "cé", "zar"   ), (      "ie", "iar"  ),
+    (      "id", "ir"   ), (     "ué", "ar"     ),
 ]
 
+
 class Verbs(_Verbs):
-    
+
     def __init__(self):
         _Verbs.__init__(self, os.path.join(MODULE, "es-verbs.txt"),
             language = "es",
@@ -261,7 +275,7 @@ class Verbs(_Verbs):
                 55, 56, 57, 58, 59, 60,     # subjuntivo presente
                 67, 68, 69, 70, 71, 72      # subjuntivo imperfecto
             ])
-    
+
     def find_lemma(self, verb):
         """ Returns the base form of the given inflected verb, using a rule-based approach.
         """
@@ -269,7 +283,7 @@ class Verbs(_Verbs):
         # Over 65% of -ar verbs (6500+) have a regular inflection.
         v = verb.lower()
         # Probably ends in -ir if preceding vowel in stem is -i.
-        er_ir = lambda b: (len(b) > 2 and b[-2] == "i") and b+"ir" or b+"er"
+        er_ir = lambda b: (len(b) > 2 and b[-2] == "i") and b + "ir" or b + "er"
         # Probably infinitive if ends in -ar, -er or -ir.
         if v.endswith(("ar", "er", "ir")):
             return v
@@ -278,41 +292,41 @@ class Verbs(_Verbs):
             if v.endswith(a):
                 return v[:-len(a)] + b
         # reconozco => reconocer
-        v = v.replace(u"zco", "ce")
+        v = v.replace("zco", "ce")
         # reconozcamos => reconocer
-        v = v.replace(u"zca", "ce")
+        v = v.replace("zca", "ce")
         # reconozcáis => reconocer
-        v = v.replace(u"zcá", "ce")
+        v = v.replace("zcá", "ce")
         # saldrár => saler
-        if "ldr" in v: 
-            return v[:v.index("ldr")+1] + "er"
+        if "ldr" in v:
+            return v[:v.index("ldr") + 1] + "er"
         # compondrán => componer
-        if "ndr" in v: 
-            return v[:v.index("ndr")+1] + "er"
+        if "ndr" in v:
+            return v[:v.index("ndr") + 1] + "er"
         # Many verbs end in -ar and have a regular inflection:
         for x in ((
-          u"ando", u"ado", u"ad",                                # participle
-          u"aré", u"arás", u"ará", u"aremos", u"aréis", u"arán", # future
-          u"aría", u"arías", u"aríamos", u"aríais", u"arían",    # conditional
-          u"aba", u"abas", u"ábamos", u"abais", u"aban",         # past imperfective
-          u"é", u"aste", u"ó", u"asteis", u"aron",               # past perfective
-          u"ara", u"aras", u"áramos", u"arais", u"aran")):       # past subjunctive
+          "ando", "ado", "ad",                                # participle
+          "aré", "arás", "ará", "aremos", "aréis", "arán", # future
+          "aría", "arías", "aríamos", "aríais", "arían",    # conditional
+          "aba", "abas", "ábamos", "abais", "aban",         # past imperfective
+          "é", "aste", "ó", "asteis", "aron",               # past perfective
+          "ara", "aras", "áramos", "arais", "aran")):       # past subjunctive
             if v.endswith(x):
                 return v[:-len(x)] + "ar"
         # Many verbs end in -er and have a regular inflection:
         for x in ((
-          u"iendo", u"ido", u"ed",                               # participle
-          u"eré", u"erás", u"erá", u"eremos", u"eréis", u"erán", # future
-          u"ería", u"erías", u"eríamos", u"eríais", u"erían",    # conditional
-          u"ía", u"ías", u"íamos", u"íais", u"ían",              # past imperfective
-          u"í", "iste", u"ió", "imos", "isteis", "ieron",        # past perfective
-          u"era", u"eras", u"éramos", u"erais", u"eran")):       # past subjunctive
+          "iendo", "ido", "ed",                               # participle
+          "eré", "erás", "erá", "eremos", "eréis", "erán", # future
+          "ería", "erías", "eríamos", "eríais", "erían",    # conditional
+          "ía", "ías", "íamos", "íais", "ían",              # past imperfective
+          "í", "iste", "ió", "imos", "isteis", "ieron",        # past perfective
+          "era", "eras", "éramos", "erais", "eran")):       # past subjunctive
             if v.endswith(x):
                 return er_ir(v[:-len(x)])
         # Many verbs end in -ir and have a regular inflection:
         for x in ((
-          u"iré", u"irás", u"irá", u"iremos", u"iréis", u"irán", # future
-          u"iría", u"irías", u"iríamos", u"iríais", u"irían")):  # past subjunctive
+          "iré", "irás", "irá", "iremos", "iréis", "irán", # future
+          "iría", "irías", "iríamos", "iríais", "irían")):  # past subjunctive
             if v.endswith(x):
                 return v[:-len(x)] + "ir"
         # Present 1sg -o: yo hablo, como, vivo => hablar, comer, vivir.
@@ -326,9 +340,9 @@ class Verbs(_Verbs):
             return er_ir(v.rstrip("sn")[:-1])
         # Present 1pl and 2pl: nosotros hablamos.
         for i, x in enumerate((
-          ("amos", u"áis"), 
-          ("emos", u"éis"), 
-          ("imos", u"ís"))):
+          ("amos", "áis"),
+          ("emos", "éis"),
+          ("imos", "ís"))):
             for x in x:
                 if v.endswith(x):
                     return v[:-len(x)] + ("ar", "er", "ir")[i]
@@ -338,34 +352,34 @@ class Verbs(_Verbs):
         """ For a regular verb (base form), returns the forms using a rule-based approach.
         """
         v = verb.lower()
-        if v.endswith(("arse", "erse", "irse")): 
+        if v.endswith(("arse", "erse", "irse")):
             # Reflexive verbs: calmarse (calmar) => me calmo.
             b = v[:-4]
         else:
             b = v[:-2]
         if v.endswith("ar") or not v.endswith(("er", "ir")):
             # Regular inflection for verbs ending in -ar.
-            return [v, 
-                b+u"o", b+u"as", b+u"a", b+u"amos", b+u"áis", b+u"an", b+u"ando",
-                b+u"é", b+u"aste", b+u"ó", b+u"amos", b+u"asteis", b+u"aron", b+u"ado",
-                b+u"aba", b+u"abas", b+u"aba", b+u"ábamos", b+u"abais", b+u"aban",
-                v+u"é", v+u"ás", v+u"á", v+u"emos", v+u"éis", v+u"án",
-                v+u"ía", v+u"ías", v+u"ía", v+u"íamos", v+u"íais", v+u"ían",
-                b+u"a", v[:-1]+"d",
-                b+u"e", b+u"es", b+u"e", b+u"emos", b+u"éis", b+u"en",
-                v+u"a", v+u"as", v+u"a", b+u"áramos", v+u"ais", v+u"an"]
+            return [v,
+                b + "o", b + "as", b + "a", b + "amos", b + "áis", b + "an", b + "ando",
+                b + "é", b + "aste", b + "ó", b + "amos", b + "asteis", b + "aron", b + "ado",
+                b + "aba", b + "abas", b + "aba", b + "ábamos", b + "abais", b + "aban",
+                v + "é", v + "ás", v + "á", v + "emos", v + "éis", v + "án",
+                v + "ía", v + "ías", v + "ía", v + "íamos", v + "íais", v + "ían",
+                b + "a", v[:-1] + "d",
+                b + "e", b + "es", b + "e", b + "emos", b + "éis", b + "en",
+                v + "a", v + "as", v + "a", b + "áramos", v + "ais", v + "an"]
         else:
             # Regular inflection for verbs ending in -er and -ir.
-            p1, p2 = v.endswith("er") and ("e", u"é") or ("i","e")
-            return [v, 
-                b+u"o", b+u"es", b+u"e", b+p1+u"mos", b+p2+u"is", b+u"en", b+u"iendo",
-                b+u"í", b+u"iste", b+u"ió", b+u"imos", b+u"isteis", b+u"ieron", b+u"ido",
-                b+u"ía", b+u"ías", b+u"ía", b+u"íamos", b+u"íais", b+u"ían",
-                v+u"é", v+u"ás", v+u"á", v+u"emos", v+u"éis", v+u"án",
-                v+u"ía", v+u"ías", v+u"ía", v+u"íamos", v+u"íais", v+u"ían",
-                b+u"a", v[:-1]+"d",
-                b+u"a", b+u"as", b+u"a", b+u"amos", b+u"áis", b+u"an",
-                b+u"iera", b+u"ieras", b+u"iera", b+u"iéramos", b+u"ierais", b+u"ieran"]
+            p1, p2 = v.endswith("er") and ("e", "é") or ("i", "e")
+            return [v,
+                b + "o", b + "es", b + "e", b + p1 + "mos", b + p2 + "is", b + "en", b + "iendo",
+                b + "í", b + "iste", b + "ió", b + "imos", b + "isteis", b + "ieron", b + "ido",
+                b + "ía", b + "ías", b + "ía", b + "íamos", b + "íais", b + "ían",
+                v + "é", v + "ás", v + "á", v + "emos", v + "éis", v + "án",
+                v + "ía", v + "ías", v + "ía", v + "íamos", v + "íais", v + "ían",
+                b + "a", v[:-1] + "d",
+                b + "a", b + "as", b + "a", b + "amos", b + "áis", b + "an",
+                b + "iera", b + "ieras", b + "iera", b + "iéramos", b + "ierais", b + "ieran"]
 
 verbs = Verbs()
 
@@ -374,11 +388,12 @@ conjugate, lemma, lexeme, tenses = \
 
 #### ATTRIBUTIVE & PREDICATIVE #####################################################################
 
+
 def attributive(adjective, gender=MALE):
     w = adjective.lower()
     # normal => normales
     if PLURAL in gender and not is_vowel(w[-1:]):
-        return w + "es" 
+        return w + "es"
     # el chico inteligente => los chicos inteligentes
     if PLURAL in gender and w.endswith(("a", "e")):
         return w + "s"
@@ -391,13 +406,14 @@ def attributive(adjective, gender=MALE):
         if PLURAL in gender:
             return w + "s"
     return w
-        
-#print attributive("intelligente", gender=PLURAL) # intelligentes
-#print attributive("alto", gender=MALE+PLURAL)    # altos
-#print attributive("alto", gender=FEMALE+PLURAL)  # altas
-#print attributive("normal", gender=MALE)         # normal
-#print attributive("normal", gender=FEMALE)       # normal
-#print attributive("normal", gender=PLURAL)       # normales
+
+#print(attributive("intelligente", gender=PLURAL)) # intelligentes
+#print(attributive("alto", gender=MALE+PLURAL))    # altos
+#print(attributive("alto", gender=FEMALE+PLURAL))  # altas
+#print(attributive("normal", gender=MALE))         # normal
+#print(attributive("normal", gender=FEMALE))       # normal
+#print(attributive("normal", gender=PLURAL))       # normales
+
 
 def predicative(adjective):
     """ Returns the predicative adjective (lowercase).

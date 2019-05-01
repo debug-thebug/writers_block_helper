@@ -9,6 +9,13 @@
 ####################################################################################################
 # French linguistical tools using fast regular expressions.
 
+from __future__ import unicode_literals
+from __future__ import division
+
+from builtins import str, bytes, dict, int
+from builtins import map, zip, filter
+from builtins import object, range
+
 import os
 import sys
 
@@ -40,6 +47,10 @@ from pattern.text import (
     Sentiment as _Sentiment,
     NOUN, VERB, ADJECTIVE, ADVERB,
     MOOD, IRONY
+)
+# Import spelling base class.
+from pattern.text import (
+    Spelling
 )
 # Import verb tenses.
 from pattern.text import (
@@ -76,6 +87,7 @@ _subordinating_conjunctions = set((
     "afin", "comme", "lorsque", "parce", "puisque", "quand", "que", "quoique", "si"
 ))
 
+
 def penntreebank2universal(token, tag):
     """ Converts a Penn Treebank II tag to a universal tag.
         For example: comme/IN => comme/CONJ
@@ -85,12 +97,12 @@ def penntreebank2universal(token, tag):
     return _penntreebank2universal(token, tag)
 
 ABBREVIATIONS = set((
-    u"av.", u"boul.", u"C.-B.", u"c.-à-d.", u"ex.", u"éd.", u"fig.", u"I.-P.-E.", u"J.-C.", 
-    u"Ltee.", u"Ltée.", u"M.", u"Me.","Mlle.", u"Mlles.", u"MM.", u"N.-B.", u"N.-É.", u"p.", 
-    u"S.B.E.", u"Ste.", u"T.-N.", u"t.a.b."
+    "av.", "boul.", "C.-B.", "c.-à-d.", "ex.", "éd.", "fig.", "I.-P.-E.", "J.-C.",
+    "Ltee.", "Ltée.", "M.", "Me.", "Mlle.", "Mlles.", "MM.", "N.-B.", "N.-É.", "p.",
+    "S.B.E.", "Ste.", "T.-N.", "t.a.b."
 ))
 
-# While contractions in English are optional, 
+# While contractions in English are optional,
 # they are required in French:
 replacements = {
        "l'": "l' ",  # le/la
@@ -106,9 +118,10 @@ replacements = {
   "lorsqu'": "lorsqu' ",
   "puisqu'": "puisqu' ",
     # Same rule for Unicode apostrophe, see also Parser.find_tokens():
-    ur"(l|c|d|j|m|n|qu|s|t|jusqu|lorsqu|puisqu)’": u"\\1&rsquo; "
+    r"(l|c|d|j|m|n|qu|s|t|jusqu|lorsqu|puisqu)’": "\\1&rsquo; "
 }
-replacements.update(((k.upper(), v.upper()) for k, v in replacements.items()))
+replacements.update(((k.upper(), v.upper()) for k, v in list(replacements.items())))
+
 
 def find_lemmata(tokens):
     """ Annotates the tokens with lemmata for plural nouns and conjugated verbs,
@@ -118,7 +131,7 @@ def find_lemmata(tokens):
         word, pos, lemma = token[0], token[1], token[0]
         if pos.startswith(("DT", "PR", "WP")):
             lemma = singularize(word, pos=pos)
-        if pos.startswith(("RB", "IN")) and (word.endswith(("'", u"’")) or word == "du"):
+        if pos.startswith(("RB", "IN")) and (word.endswith(("'", "’")) or word == "du"):
             lemma = singularize(word, pos=pos)
         if pos.startswith(("JJ",)):
             lemma = predicative(word)
@@ -129,18 +142,19 @@ def find_lemmata(tokens):
         token.append(lemma.lower())
     return tokens
 
+
 class Parser(_Parser):
 
     def find_tokens(self, tokens, **kwargs):
         kwargs.setdefault("abbreviations", ABBREVIATIONS)
         kwargs.setdefault("replace", replacements)
         s = _Parser.find_tokens(self, tokens, **kwargs)
-        s = [s.replace("&rsquo ;", u"’") if isinstance(s, unicode) else s for s in s]
+        s = [s.replace("&rsquo ;", "’") if isinstance(s, str) else s for s in s]
         return s
 
     def find_lemmata(self, tokens, **kwargs):
         return find_lemmata(tokens)
-        
+
     def find_tags(self, tokens, **kwargs):
         if kwargs.get("tagset") in (PENN, None):
             kwargs.setdefault("map", lambda token, tag: (token, tag))
@@ -148,27 +162,29 @@ class Parser(_Parser):
             kwargs.setdefault("map", lambda token, tag: penntreebank2universal(token, tag))
         return _Parser.find_tags(self, tokens, **kwargs)
 
+
 class Sentiment(_Sentiment):
-    
+
     def load(self, path=None):
         _Sentiment.load(self, path)
         # Map "précaire" to "precaire" (without diacritics, +1% accuracy).
         if not path:
-            for w, pos in dict.items(self):
+            for w, pos in list(dict.items(self)):
                 w0 = w
-                if not w.endswith((u"à", u"è", u"é", u"ê", u"ï")):
-                    w = w.replace(u"à", "a")
-                    w = w.replace(u"é", "e")
-                    w = w.replace(u"è", "e")
-                    w = w.replace(u"ê", "e")
-                    w = w.replace(u"ï", "i")
+                if not w.endswith(("à", "è", "é", "ê", "ï")):
+                    w = w.replace("à", "a")
+                    w = w.replace("é", "e")
+                    w = w.replace("è", "e")
+                    w = w.replace("ê", "e")
+                    w = w.replace("ï", "i")
                 if w != w0:
                     for pos, (p, s, i) in pos.items():
                         self.annotate(w, pos, p, s, i)
 
 parser = Parser(
-     lexicon = os.path.join(MODULE, "fr-lexicon.txt"), 
-  morphology = os.path.join(MODULE, "fr-morphology.txt"), 
+     lexicon = os.path.join(MODULE, "fr-lexicon.txt"),
+   frequency = os.path.join(MODULE, "fr-frequency.txt"),
+  morphology = os.path.join(MODULE, "fr-morphology.txt"),
      context = os.path.join(MODULE, "fr-context.txt"),
      default = ("NN", "NNP", "CD"),
     language = "fr"
@@ -177,35 +193,44 @@ parser = Parser(
 lexicon = parser.lexicon # Expose lexicon.
 
 sentiment = Sentiment(
-        path = os.path.join(MODULE, "fr-sentiment.xml"), 
+        path = os.path.join(MODULE, "fr-sentiment.xml"),
       synset = None,
    negations = ("n'", "ne", "ni", "non", "pas", "rien", "sans", "aucun", "jamais"),
    modifiers = ("RB",),
-   modifier  = lambda w: w.endswith("ment"),
+   modifier = lambda w: w.endswith("ment"),
    tokenizer = parser.find_tokens,
     language = "fr"
 )
+
+spelling = Spelling(
+        path = os.path.join(MODULE, "fr-spelling.txt")
+)
+
 
 def tokenize(s, *args, **kwargs):
     """ Returns a list of sentences, where punctuation marks have been split from words.
     """
     return parser.find_tokens(s, *args, **kwargs)
 
+
 def parse(s, *args, **kwargs):
     """ Returns a tagged Unicode string.
     """
     return parser.parse(s, *args, **kwargs)
+
 
 def parsetree(s, *args, **kwargs):
     """ Returns a parsed Text from the given string.
     """
     return Text(parse(s, *args, **kwargs))
 
+
 def tree(s, token=[WORD, POS, CHUNK, PNP, REL, LEMMA]):
     """ Returns a parsed Text from the given parsed string.
     """
     return Text(s, token)
-    
+
+
 def tag(s, tokenize=True, encoding="utf-8", **kwargs):
     """ Returns a list of (token, tag)-tuples from the given string.
     """
@@ -215,16 +240,35 @@ def tag(s, tokenize=True, encoding="utf-8", **kwargs):
             tags.append((token[0], token[1]))
     return tags
 
+
+def keywords(s, top=10, **kwargs):
+    """ Returns a sorted list of keywords in the given string.
+    """
+    return parser.find_keywords(s, **dict({
+        "frequency": parser.frequency,
+              "top": top,
+              "pos": ("NN",),
+           "ignore": ("rt",)}, **kwargs))
+
+
+def suggest(w):
+    """ Returns a list of (word, confidence)-tuples of spelling corrections.
+    """
+    return spelling.suggest(w)
+
+
 def polarity(s, **kwargs):
     """ Returns the sentence polarity (positive/negative) between -1.0 and 1.0.
     """
     return sentiment(s, **kwargs)[0]
 
+
 def subjectivity(s, **kwargs):
     """ Returns the sentence subjectivity (objective/subjective) between 0.0 and 1.0.
     """
     return sentiment(s, **kwargs)[1]
-    
+
+
 def positive(s, threshold=0.1, **kwargs):
     """ Returns True if the given sentence has a positive sentiment (polarity >= threshold).
     """

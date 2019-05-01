@@ -1,59 +1,68 @@
 #!/usr/bin/env python
 
+from __future__ import unicode_literals
+from __future__ import absolute_import
+from __future__ import division
+
+from builtins import str, bytes, int
+from builtins import object, range
+from builtins import map, zip, filter
+
 from ctypes import *
 from ctypes.util import find_library
 from os import path
 import sys
 
-# For unix the prefix 'lib' is not considered.
-if find_library('svm'):
-	libsvm = CDLL(find_library('svm'))
-elif find_library('libsvm'):
-	libsvm = CDLL(find_library('libsvm'))
-else:
-	b = False
-	for v in ("libsvm-3.17", "libsvm-3.11"):  # LIBSVM 3.11-17
-		for binary in (
-		  # If you have OS X 32-bit, you need a 32-bit Python and libsvm-mac32.so.
-		  # If you have OS X 32-bit with 64-bit Python, 
-		  # it will try to load libsvm-mac64.so which fails since OS X is 32-bit.
-		  # It won't load libsvm-mac32.so since Python is 64-bit.
-		  "libsvm-win64.dll",   # 1) 64-bit Windows
-		  "libsvm-win32.dll",   # 2) 32-bit Windows
-		  "libsvm-mac32.so",    # 3) 32-bit Mac OS X
-		  "libsvm-mac64.so",    # 4) 64-bit Mac OS X
-		  "libsvm-ubuntu64.so", # 5) 64-bit Linux Ubuntu
-		  "libsvm.so",          # 6) User-compiled Mac / Linux
-		  "libsvm.dll"):        # 7) User-compiled Windows
-			if sys.platform.startswith("win") and binary.endswith(".so"):
-				continue
-			try:
-				libsvm = CDLL(path.join(path.dirname(__file__), v, binary)); b=True; break
-			except OSError, e:
-				continue
-		if b: break
-	if not b:
-		raise ImportError, "can't import libsvm (%sbit-%s)" % (
-			sizeof(c_voidp) * 8, 
-			sys.platform
-		)
+__all__ = ['libsvm', 'svm_problem', 'svm_parameter',
+           'toPyModel', 'gen_svm_nodearray', 'print_null', 'svm_node', 'C_SVC',
+           'EPSILON_SVR', 'LINEAR', 'NU_SVC', 'NU_SVR', 'ONE_CLASS',
+           'POLY', 'PRECOMPUTED', 'PRINT_STRING_FUN', 'RBF',
+           'SIGMOID', 'c_double', 'svm_model']
 
-# Construct constants
-SVM_TYPE = ['C_SVC', 'NU_SVC', 'ONE_CLASS', 'EPSILON_SVR', 'NU_SVR' ]
-KERNEL_TYPE = ['LINEAR', 'POLY', 'RBF', 'SIGMOID', 'PRECOMPUTED']
-for i, s in enumerate(SVM_TYPE): exec("%s = %d" % (s , i))
-for i, s in enumerate(KERNEL_TYPE): exec("%s = %d" % (s , i))
+try:
+	dirname = path.dirname(path.abspath(__file__))
+	if sys.platform == 'win32':
+		libsvm = CDLL(path.join(dirname, 'windows\libsvm-3.22\libsvm.dll'))
+	else:
+		libsvm = CDLL(path.join(dirname, 'macos/libsvm-3.22/libsvm.so.2'))
+
+except:
+# For unix the prefix 'lib' is not considered.
+	if find_library('svm'):
+		libsvm = CDLL(find_library('svm'))
+	elif find_library('libsvm'):
+		libsvm = CDLL(find_library('libsvm'))
+	else:
+		libsvm = CDLL(path.join(path.dirname(__file__), 'ubuntu/libsvm-3.22/libsvm.so.2'))
+
+
+C_SVC = 0
+NU_SVC = 1
+ONE_CLASS = 2
+EPSILON_SVR = 3
+NU_SVR = 4
+
+LINEAR = 0
+POLY = 1
+RBF = 2
+SIGMOID = 3
+PRECOMPUTED = 4
 
 PRINT_STRING_FUN = CFUNCTYPE(None, c_char_p)
-def print_null(s): 
-	return 
 
-def genFields(names, types): 
+
+def print_null(s):
+	return
+
+
+def genFields(names, types):
 	return list(zip(names, types))
 
-def fillprototype(f, restype, argtypes): 
+
+def fillprototype(f, restype, argtypes):
 	f.restype = restype
 	f.argtypes = argtypes
+
 
 class svm_node(Structure):
 	_names = ["index", "value"]
@@ -62,6 +71,7 @@ class svm_node(Structure):
 
 	def __str__(self):
 		return '%d:%g' % (self.index, self.value)
+
 
 def gen_svm_nodearray(xi, feature_max=None, isKernel=None):
 	if isinstance(xi, dict):
@@ -75,20 +85,21 @@ def gen_svm_nodearray(xi, feature_max=None, isKernel=None):
 
 	if feature_max:
 		assert(isinstance(feature_max, int))
-		index_range = filter(lambda j: j <= feature_max, index_range)
-	if not isKernel: 
-		index_range = filter(lambda j:xi[j] != 0, index_range)
+		index_range = list(filter(lambda j: j <= feature_max, index_range))
+	if not isKernel:
+		index_range = list(filter(lambda j:xi[j] != 0, index_range))
 
 	index_range = sorted(index_range)
-	ret = (svm_node * (len(index_range)+1))()
+	ret = (svm_node * (len(index_range) + 1))()
 	ret[-1].index = -1
 	for idx, j in enumerate(index_range):
 		ret[idx].index = j
 		ret[idx].value = xi[j]
 	max_idx = 0
-	if index_range: 
+	if index_range:
 		max_idx = index_range[-1]
 	return ret, max_idx
+
 
 class svm_problem(Structure):
 	_names = ["l", "y", "x"]
@@ -109,16 +120,19 @@ class svm_problem(Structure):
 		self.n = max_idx
 
 		self.y = (c_double * l)()
-		for i, yi in enumerate(y): self.y[i] = yi
+		for i, yi in enumerate(y):
+			self.y[i] = yi
 
-		self.x = (POINTER(svm_node) * l)() 
-		for i, xi in enumerate(self.x_space): self.x[i] = xi
+		self.x = (POINTER(svm_node) * l)()
+		for i, xi in enumerate(self.x_space):
+			self.x[i] = xi
+
 
 class svm_parameter(Structure):
 	_names = ["svm_type", "kernel_type", "degree", "gamma", "coef0",
-			"cache_size", "eps", "C", "nr_weight", "weight_label", "weight", 
+			"cache_size", "eps", "C", "nr_weight", "weight_label", "weight",
 			"nu", "p", "shrinking", "probability"]
-	_types = [c_int, c_int, c_int, c_double, c_double, 
+	_types = [c_int, c_int, c_int, c_double, c_double,
 			c_double, c_double, c_double, c_int, POINTER(c_int), POINTER(c_double),
 			c_double, c_double, c_int, c_int]
 	_fields_ = genFields(_names, _types)
@@ -131,7 +145,7 @@ class svm_parameter(Structure):
 	def __str__(self):
 		s = ''
 		attrs = svm_parameter._names + list(self.__dict__.keys())
-		values = map(lambda attr: getattr(self, attr), attrs) 
+		values = list(map(lambda attr: getattr(self, attr), attrs))
 		for attr, val in zip(attrs, values):
 			s += (' %s: %s\n' % (attr, val))
 		s = s.strip()
@@ -139,7 +153,7 @@ class svm_parameter(Structure):
 		return s
 
 	def set_to_default_values(self):
-		self.svm_type = C_SVC;
+		self.svm_type = C_SVC
 		self.kernel_type = RBF
 		self.degree = 3
 		self.gamma = 0
@@ -152,11 +166,11 @@ class svm_parameter(Structure):
 		self.shrinking = 1
 		self.probability = 0
 		self.nr_weight = 0
-		self.weight_label = (c_int*0)()
-		self.weight = (c_double*0)()
+		self.weight_label = None
+		self.weight = None
 		self.cross_validation = False
 		self.nr_fold = 0
-		self.print_func = None
+		self.print_func = cast(None, PRINT_STRING_FUN)
 
 	def parse_options(self, options):
 		if isinstance(options, list):
@@ -219,19 +233,19 @@ class svm_parameter(Structure):
 			elif argv[i].startswith("-w"):
 				i = i + 1
 				self.nr_weight += 1
-				nr_weight = self.nr_weight
-				weight_label += [int(argv[i-1][2:])]
+				weight_label += [int(argv[i - 1][2:])]
 				weight += [float(argv[i])]
 			else:
 				raise ValueError("Wrong options")
 			i += 1
 
 		libsvm.svm_set_print_string_function(self.print_func)
-		self.weight_label = (c_int*self.nr_weight)()
-		self.weight = (c_double*self.nr_weight)()
-		for i in range(self.nr_weight): 
+		self.weight_label = (c_int * self.nr_weight)()
+		self.weight = (c_double * self.nr_weight)()
+		for i in range(self.nr_weight):
 			self.weight[i] = weight[i]
 			self.weight_label[i] = weight_label[i]
+
 
 class svm_model(Structure):
 	_names = ['param', 'nr_class', 'l', 'SV', 'sv_coef', 'rho',
@@ -285,7 +299,7 @@ class svm_model(Structure):
 		result = []
 		for sparse_sv in self.SV[:self.l]:
 			row = dict()
-			
+
 			i = 0
 			while True:
 				row[sparse_sv[i].index] = sparse_sv[i].value
@@ -295,6 +309,7 @@ class svm_model(Structure):
 
 			result.append(row)
 		return result
+
 
 def toPyModel(model_ptr):
 	"""
