@@ -7,14 +7,19 @@ Created on Mon Apr 22 09:31:48 2019
 
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
-
+from synonym_generator import SynonymGenerator
 
 class WordCloudGenerator:
     def __init__(self):
         self.wordcloud = WordCloud(max_font_size=40)
         
     def generate_wc(self, text, fname):
-        self.wordcloud.generate(text)
+		syn_machine = SynonymGenerator(text)
+		newText = synonym_gen.get_sentence(3)
+		nText = ""
+		for t in newText:
+			nText += (t + " ")
+        self.wordcloud.generate(nText)
         plt.figure()
         plt.imshow(self.wordcloud, interpolation="bilinear")
         plt.axis("off")
