@@ -38,12 +38,12 @@ pos_dict = {'VB': wordnet.VERB,
             'JJS': wordnet.ADJ}
 
 class SynonymGenerator:
-    def __init__(self, text):
-        self.text = text
-        self.tokenized_text = nltk.word_tokenize(self.text)
+    #def __init__(self):
+        #self.text = text
+        #self.tokenized_text = nltk.word_tokenize(self.text)
     
-    def get_important_words(self):
-        tagged = nltk.pos_tag(self.tokenized_text)
+    def get_important_words(self, tokenized_text):
+        tagged = nltk.pos_tag(tokenized_text)
         word_to_pos = {}
         for tup in tagged:
             if tup[1] in acceptable_pos:
@@ -95,15 +95,16 @@ class SynonymGenerator:
 #        return word_to_syns_dict
                                         
                                     
-    def get_word_to_synonyms_dict(self, n):
+    def get_word_to_synonyms_dict(self, n, text, tokenized_text):
         word_to_syns_dict = {}
-        word_to_pos = self.get_important_words()    
+        word_to_pos = self.get_important_words(tokenized_text)    
         
-        for w in self.tokenized_text:
+        #for w in self.tokenized_text:
+        for w in tokenized_text:
             
             if w in word_to_pos:
                 list_of_syns_for_w = []
-                original_synset = lesk(self.text, w)
+                original_synset = lesk(text, w)
                 if original_synset:
                     word = Word(w)
                     p_o_s = pos_dict_thesaurus[word_to_pos[w]]
@@ -125,9 +126,9 @@ class SynonymGenerator:
                         word_to_syns_dict[(w, word_to_pos[w])] = list_of_syns_for_w[:n_truncate]
         return word_to_syns_dict
     
-    def get_tense_plurality_dict(self, n):
+    def get_tense_plurality_dict(self, n, text, tokenized_text):
         correct_tense_number_dict = {}
-        wordpos_to_syns_dict = self.get_word_to_synonyms_dict(n)
+        wordpos_to_syns_dict = self.get_word_to_synonyms_dict(n, text, tokenized_text)
         #print(wordpos_to_syns_dict)
         #print()
         for (word, pos), list_syns in wordpos_to_syns_dict.items():
@@ -150,12 +151,15 @@ class SynonymGenerator:
                 correct_tense_number_dict[word] = [tup[0] for tup in list_syns]
         return correct_tense_number_dict
     
-    def get_sentence(self, n):
+    def get_sentence(self, n, text):
+        text = text
+        tokenized_text = nltk.word_tokenize(text)
+        
         alternate_sentences = []
-        d = self.get_tense_plurality_dict(n)
+        d = self.get_tense_plurality_dict(n+1, text, tokenized_text)
     
-        for i in range(n-1, 0, -1):
-            alternate_sentence = self.text
+        for i in range(n, 0, -1):
+            alternate_sentence = text
             for key in d:
                 i_new = i if i <= len(d[key]) else len(d[key])
                 alternate_sentence = alternate_sentence.replace(key, d[key][i_new])
@@ -165,8 +169,8 @@ class SynonymGenerator:
 
 text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
 text2 = "I can't remember how to go there."
-synonym_gen = SynonymGenerator(text1)
-print(synonym_gen.get_word_to_synonyms_dict(3))
+synonym_gen = SynonymGenerator()
+#print(synonym_gen.get_sentence(4, text1))
 
 
 #w = Word('tasted')

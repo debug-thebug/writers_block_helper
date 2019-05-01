@@ -46,6 +46,18 @@
         {% end %}
     </div>
 
+    <div id="sentences" style="text-align: left">
+        {% if sentences is not None %}
+        <h3>Alternate Sentences:</h3>
+            <ul>
+            {% for s in sentences %}
+                <li> {{ s }}  </li>
+                <br>
+            {% end %}
+            </ul>
+        {% end %}
+    </div>
+
     <div id="wordcloud" style="text-align: left">
         {% if wordcloud %}
             <h3>Word Cloud:</h3>

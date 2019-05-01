@@ -7,6 +7,7 @@ Created on Mon Apr 22 09:31:48 2019
 
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+import nltk
 from synonym_generator import SynonymGenerator
 
 class WordCloudGenerator:
@@ -14,8 +15,9 @@ class WordCloudGenerator:
         self.wordcloud = WordCloud(max_font_size=40)
         
     def generate_wc(self, text, fname):
-        syn_machine = SynonymGenerator(text)
-        text_syns = list(syn_machine.get_word_to_synonyms_dict(3).items())
+        tokenized_text = nltk.word_tokenize(text)
+        syn_machine = SynonymGenerator()
+        text_syns = list(syn_machine.get_word_to_synonyms_dict(3, text, tokenized_text).items())
         if len(text_syns) >= 3:
             for i in range(3):
                 row = text_syns[i]

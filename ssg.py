@@ -5,6 +5,7 @@ from tornado.web import StaticFileHandler
 import json
 from mongodb_connector import dbHandler
 from validity_checker import ValidityChecker
+from synonym_generator import SynonymGenerator
 from wordcloud_gen import WordCloudGenerator
 import logging
 
@@ -13,6 +14,7 @@ class InputApplication(Application):
     def __init__(self, handler_mapping):
         self.db = dbHandler()
         self.checker = ValidityChecker()
+        self.sentencegenerator = SynonymGenerator()
         self.wcgenerator = WordCloudGenerator()
         super(InputApplication, self).__init__(handler_mapping)
 
@@ -23,7 +25,7 @@ class InputHandler(RequestHandler):
         self.set_header('Access-Control-Allow-Credentials', 'true')
 
     def get(self):
-        self.render("frontend_form.html", message=None, corrections=None, wordcloud=False)
+        self.render("frontend_form.html", message=None, corrections=None, sentences=None, wordcloud=False)
 
     def post(self):
         input_text = self.get_argument("text")
@@ -33,12 +35,14 @@ class InputHandler(RequestHandler):
         if self.application.checker.len_corrections(corrections) == 0:
             corrections = None
 
+        # Generate synonymous sentences
+        sentences = self.application.sentencegenerator.get_sentence(3, text=input_text)
+
         # Generate word cloud
         self.application.wcgenerator.generate_wc(text=input_text, fname="Dynamic_Word_Cloud")
 
         # Render page after generating required info
-        self.render("frontend_form.html", message=input_text, corrections=corrections, wordcloud=True)
-
+        self.render("frontend_form.html", message=input_text, corrections=corrections, sentences=sentences, wordcloud=True)
 
         # sentences.append(self.request.body)
         # give input in dict/json format
