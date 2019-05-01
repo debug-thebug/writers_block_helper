@@ -165,7 +165,7 @@ class SynonymGenerator:
 text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
 text2 = "I can't remember how to go there."
 synonym_gen = SynonymGenerator(text1)
-print(synonym_gen.get_sentence(3))
+print(synonym_gen.get_word_to_synonyms_dict(3))
 
 
 #w = Word('tasted')

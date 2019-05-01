@@ -34,7 +34,7 @@ class InputHandler(RequestHandler):
             corrections = None
 
         # Generate word cloud
-        self.application.wcgenerator.generate_wc(text=input_text, fname="Dynamic_Word_Cloud.jpg")
+        self.application.wcgenerator.generate_wc(text=input_text, fname="Dynamic_Word_Cloud")
 
         # Render page after generating required info
         self.render("frontend_form.html", message=input_text, corrections=corrections, wordcloud=True)
