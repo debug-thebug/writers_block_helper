@@ -6,11 +6,12 @@ import json
 from mongodb_connector import dbHandler
 from validity_checker import ValidityChecker
 from wordcloud_gen import WordCloudGenerator
+import logging
 
 sentences = []
 class InputApplication(Application):
     def __init__(self, handler_mapping):
-        # self.db = dbHandler()
+        self.db = dbHandler()
         self.checker = ValidityChecker()
         self.wcgenerator = WordCloudGenerator()
         super(InputApplication, self).__init__(handler_mapping)
@@ -18,7 +19,7 @@ class InputApplication(Application):
 class InputHandler(RequestHandler):
     def set_default_headers(self):
         super(InputHandler, self).set_default_headers()
-        self.set_header('Access-Control-Allow-Origin', 'http://localhost:3000')
+        self.set_header('Access-Control-Allow-Origin', 'http://localhost:7777')
         self.set_header('Access-Control-Allow-Credentials', 'true')
 
     def get(self):
@@ -44,10 +45,15 @@ class InputHandler(RequestHandler):
         # self.application.db.insertSentenceToDb(json.loads(self.request.body))
 
 if __name__ == "__main__":
+    logging_level = logging.getLevelName('INFO')
+    logging.getLogger().setLevel(logging_level)
+    logging.info('starting event logger on %s:%d', '127.0.0.1', 7777)
+	
     handler_mapping = [
+					   (r'/', InputHandler),
                        (r'/sentence', InputHandler),
                        (r'/sentence/', InputHandler),
-                        (r"/static/(.*)", StaticFileHandler, {"path": "./"})
+                       (r"/static/(.*)", StaticFileHandler, {"path": "./"})
                       ]
     application = InputApplication(handler_mapping)
     application.listen(7777)
