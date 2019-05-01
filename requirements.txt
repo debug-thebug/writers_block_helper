@@ -1,4 +1,8 @@
-require tornado>=6.0.2
-require pymongo>=3.7.2
-require dnspython>=1.16.0
-require wordcloud>=1.5.0
+tornado>=6.0.2
+pymongo>=3.7.2
+dnspython>=1.16.0
+wordcloud>=1.5.0
+nltk
+bs4
+spacy
+matplotlib

@@ -63,20 +63,26 @@
 			{% if words is not None %}
             <h3>Word Cloud:</h3>
 				<ul>
-					<li> 
-						{{ words[0] }} 
+					<li>
+                        {% if words[0] %}
+						    {{ words[0] }}
+                        {% end %}
 						<br>
 						<img src="/static/Dynamic_Word_Cloud_0.jpg" />
 						<br>
 					</li>
-					<li> 
-						{{ words[1] }} 
+					<li>
+                        {% if words[1] %}
+						    {{ words[1] }}
+                        {% end %}
 						<br>
 						<img src="/static/Dynamic_Word_Cloud_1.jpg" />
 						<br>
 					</li>
-					<li> 
-						{{ words[2] }} 
+					<li>
+                        {% if words[2] %}
+						    {{ words[2] }}
+                        {% end %}
 						<br>
 						<img src="/static/Dynamic_Word_Cloud_2.jpg" />
 						<br>

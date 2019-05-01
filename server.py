@@ -12,7 +12,7 @@ import logging
 sentences = []
 class InputApplication(Application):
     def __init__(self, handler_mapping):
-        #self.db = dbHandler()
+        # self.db = dbHandler()
         self.checker = ValidityChecker()
         self.sentencegenerator = SynonymGenerator()
         self.wcgenerator = WordCloudGenerator()
@@ -35,19 +35,25 @@ class InputHandler(RequestHandler):
         if self.application.checker.len_corrections(corrections) == 0:
             corrections = None
 
-        # Generate synonymous sentences
-        sentences = self.application.sentencegenerator.get_sentence(3,
-                                                                    text=input_text)
+        if corrections is None:
+            # Generate synonymous sentences
+            sentences = self.application.sentencegenerator.get_sentence(3,
+                                                                        text=input_text)
 
-        # Generate word cloud
-        words = self.application.wcgenerator.generate_wc(text=input_text, 
-                                                         fname="Dynamic_Word_Cloud")
+            # Generate word cloud
+            words = self.application.wcgenerator.generate_wc(text=input_text,
+                                                             fname="Dynamic_Word_Cloud")
 
-        # Render page after generating required info
-        self.render("frontend_form.html", message=input_text, 
-                    corrections=corrections, sentences=sentences, words=words, 
-                    wordcloud=True)
+            # Render page after generating required info
+            self.render("frontend_form.html", message=input_text,
+                        corrections=None, sentences=sentences, words=words,
+                        wordcloud=True)
+        else:
+            self.render("frontend_form.html", message=input_text,
+                        corrections=corrections, sentences=None, words=None,
+                        wordcloud=False)
 
+        # Insert valid sentences to database
         # sentences.append(self.request.body)
         # give input in dict/json format
         # self.application.db.insertSentenceToDb(json.loads(self.request.body))
