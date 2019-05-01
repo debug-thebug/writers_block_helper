@@ -104,24 +104,25 @@ class SynonymGenerator:
             if w in word_to_pos:
                 list_of_syns_for_w = []
                 original_synset = lesk(self.text, w)
-                word = Word(w)
-                p_o_s = pos_dict_thesaurus[word_to_pos[w]]
-                #print(w, word_to_pos[w], p_o_s)
-                syns = word.synonyms('all', partOfSpeech=p_o_s)
-                flat_list = [item for sublist in syns for item in sublist]
-                for candidate_syn in flat_list:
-                    candidate_synsets = wordnet.synsets(candidate_syn, pos=pos_dict[word_to_pos[w]])
-                    #print(candidate_syn, ":", candidate_synsets)
-                    #print(candidate_syn)
-                    if len(candidate_synsets) > 0:
-                        list_sims = [original_synset.wup_similarity(x) for x in candidate_synsets if original_synset.wup_similarity(x)]
-                        if len(list_sims) > 0:
-                            maxSim = max(list_sims)
-                            list_of_syns_for_w.append((candidate_syn, maxSim))
-                if list_of_syns_for_w:
-                    list_of_syns_for_w.sort(key=lambda x: x[1], reverse=True)
-                    n_truncate = n if n <= len(list_of_syns_for_w) else len(list_of_syns_for_w)
-                    word_to_syns_dict[(w, word_to_pos[w])] = list_of_syns_for_w[:n_truncate]
+                if original_synset:
+                    word = Word(w)
+                    p_o_s = pos_dict_thesaurus[word_to_pos[w]]
+                    #print(w, word_to_pos[w], p_o_s)
+                    syns = word.synonyms('all', partOfSpeech=p_o_s)
+                    flat_list = [item for sublist in syns for item in sublist]
+                    for candidate_syn in flat_list:
+                        candidate_synsets = wordnet.synsets(candidate_syn, pos=pos_dict[word_to_pos[w]])
+                        #print(candidate_syn, ":", candidate_synsets)
+                        #print(candidate_syn)
+                        if len(candidate_synsets) > 0:
+                            list_sims = [original_synset.wup_similarity(x) for x in candidate_synsets if original_synset.wup_similarity(x)]
+                            if len(list_sims) > 0:
+                                maxSim = max(list_sims)
+                                list_of_syns_for_w.append((candidate_syn, maxSim))
+                    if list_of_syns_for_w:
+                        list_of_syns_for_w.sort(key=lambda x: x[1], reverse=True)
+                        n_truncate = n if n <= len(list_of_syns_for_w) else len(list_of_syns_for_w)
+                        word_to_syns_dict[(w, word_to_pos[w])] = list_of_syns_for_w[:n_truncate]
         return word_to_syns_dict
     
     def get_tense_plurality_dict(self, n):
