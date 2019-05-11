@@ -8,11 +8,13 @@ from validity_checker import ValidityChecker
 from synonym_generator import SynonymGenerator
 from wordcloud_gen import WordCloudGenerator
 import logging
+import uuid
 
 sentences = []
 class InputApplication(Application):
     def __init__(self, handler_mapping):
         self.db = dbHandler()
+        self.db.connectToDb()
         self.checker = ValidityChecker()
         self.sentencegenerator = SynonymGenerator()
         self.wcgenerator = WordCloudGenerator()
@@ -43,21 +45,8 @@ class InputHandler(RequestHandler):
             # Generate word cloud
             words = self.application.wcgenerator.generate_wc(text=input_text,
                                                              fname="Dynamic_Word_Cloud")
-            
-            # Insert valid sentences to database
-            #sentences.append(self.request.body)
-            # give input in dict/json format
-            #self.application.db.insertSentenceToDb(json.loads(self.request.body))
-            
-            # Insert valid synonymous sentences to database
-            for sentence in sentences:
-                self.application.db.insertSentenceToDb({
-                    "custom_id": 1,
-                    "sentence": sentence
-                })
     
             # Get history of synonymous sentences, generate frequency-relative word cloud.
-            self.application.db.connectToDb()
             sentence = ""
             for post in self.application.db.sentence_collection.find():
                 sentence = sentence + " " + post['sentence']
@@ -67,7 +56,14 @@ class InputHandler(RequestHandler):
             # Render page after generating required info
             self.render("frontend_form.html", message=input_text,
                         corrections=None, sentences=sentences, words=words,
-                        wordcloud=True)            
+                        wordcloud=True)
+
+            # Insert valid synonymous sentences to database
+            for sentence in sentences:
+                self.application.db.insertSentenceToDb({
+                    "custom_id": str(uuid.uuid4()),
+                    "sentence": sentence
+                })
         
         else:
             self.render("frontend_form.html", message=input_text,
