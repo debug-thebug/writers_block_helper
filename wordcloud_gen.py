@@ -41,6 +41,15 @@ class WordCloudGenerator:
                 plt.savefig(fname + "_" + str(i) + ".jpg", figsize=(200,100), dpi=100,bbox_inches='tight')
         return words
     
+    # Generate single word cloud based on text of all synonymous sentences.
+    def generate_wc_one(self, text, fname):
+        self.wordcloud.generate(text)
+        plt.figure()
+        plt.imshow(self.wordcloud, interpolation="bilinear")
+        plt.axis("off")
+        plt.savefig(fname + "_0.jpg", figsize=(200,100), dpi=100,bbox_inches='tight')
+        
+    
 # text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
 # wC = WordCloudGenerator()
 # wC.generate_wc(text=text1, fname='save_fig.jpg')

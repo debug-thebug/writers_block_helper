@@ -86,7 +86,15 @@
 						<br>
 						<img src="/static/Dynamic_Word_Cloud_2.jpg" />
 						<br>
-					</li>					
+					</li>	
+					<li>
+                        {% if words[3] %}
+						    {{ words[3] }}
+                        {% end %}
+						<br>
+						<img src="/static/Total_Word_Cloud_0.jpg" />
+						<br>
+					</li>
 				</ul>
 			{% end %}
         {% end %}

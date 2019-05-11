@@ -12,7 +12,7 @@ import logging
 sentences = []
 class InputApplication(Application):
     def __init__(self, handler_mapping):
-        # self.db = dbHandler()
+        self.db = dbHandler()
         self.checker = ValidityChecker()
         self.sentencegenerator = SynonymGenerator()
         self.wcgenerator = WordCloudGenerator()
@@ -43,20 +43,38 @@ class InputHandler(RequestHandler):
             # Generate word cloud
             words = self.application.wcgenerator.generate_wc(text=input_text,
                                                              fname="Dynamic_Word_Cloud")
-
+            
+            # Insert valid sentences to database
+            #sentences.append(self.request.body)
+            # give input in dict/json format
+            #self.application.db.insertSentenceToDb(json.loads(self.request.body))
+            
+            # Insert valid synonymous sentences to database
+            for sentence in sentences:
+                self.application.db.insertSentenceToDb({
+                    "custom_id": 1,
+                    "sentence": sentence
+                })
+    
+            # Get history of synonymous sentences, generate frequency-relative word cloud.
+            self.application.db.connectToDb()
+            sentence = ""
+            for post in self.application.db.sentence_collection.find():
+                sentence = sentence + " " + post['sentence']
+            self.application.wcgenerator.generate_wc_one(sentence, "Total_Word_Cloud")
+            words.append(sentence)
+            
             # Render page after generating required info
             self.render("frontend_form.html", message=input_text,
                         corrections=None, sentences=sentences, words=words,
-                        wordcloud=True)
+                        wordcloud=True)            
+        
         else:
             self.render("frontend_form.html", message=input_text,
                         corrections=corrections, sentences=None, words=None,
                         wordcloud=False)
 
-        # Insert valid sentences to database
-        # sentences.append(self.request.body)
-        # give input in dict/json format
-        # self.application.db.insertSentenceToDb(json.loads(self.request.body))
+
 
 if __name__ == "__main__":
     logging_level = logging.getLevelName('INFO')
