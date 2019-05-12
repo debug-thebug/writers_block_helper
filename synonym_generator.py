@@ -49,52 +49,7 @@ class SynonymGenerator:
             if tup[1] in acceptable_pos:
                 word_to_pos[tup[0]] = tup[1]
         return word_to_pos
-    
-#    def choose_best_few(self, word, pos, syns):
-#        flat_list = [item for sublist in syns for item in sublist]
-#        
-#        print(flat_list)
-#        if len(flat_list) == 0:
-#            return []
-#        
-#        to_return = []
-#        for word2 in flat_list:
-#            orig = wordnet.synsets(word, pos=pos)
-#            syn = wordnet.synsets(word, pos=pos)
-#            if orig and syn: #Thanks to @alexis' note
-#               s = orig[0].wup_similarity(syn[0])
-#                to_return.append(s)
-#
-#        print(max(to_return))
-        
-    
-    #def change_lemma_to_pos(self, lemma):
-
-#    def get_word_to_synonyms_dict(self): 
-#        word_to_syns_dict = {}
-#        word_to_pos = self.get_important_words()    
-#        for w in self.tokenized_text:
-#            if w in word_to_pos:
-#                original_synset = lesk(self.text, w)
-#                if original_synset: 
-#                    for l in original_synset.lemmas():
-#                        if l.name() != w:
-#                            #print(w, " -> ", l)
-#                            candidate_synsets = wordnet.synsets(l.name(), pos=pos_dict[word_to_pos[w]])
-#                            #print("ORIGINAL SYNSET: ", original_synset)
-#                            #print("CANDIDATE SYNSETS: ", candidate_synsets)
-#                            if len(candidate_synsets) > 0:
-#                                #newlist = sorted(candidate_synsets, key=lambda x: original_synset.wup_similarity(x))
-#                                minSim = max([original_synset.wup_similarity(x) for x in candidate_synsets])
-#                                #print(w, l.name(), minSim)
-#
-#                                if w in word_to_syns_dict:
-#                                    word_to_syns_dict[w].append((l.name(), minSim))
-#                                else:
-#                                    word_to_syns_dict[w] = [(l.name(), minSim)]
-#        return word_to_syns_dict
-                                        
-                                    
+                            
     def get_word_to_synonyms_dict(self, n, text, tokenized_text):
         word_to_syns_dict = {}
         word_to_pos = self.get_important_words(tokenized_text)    
