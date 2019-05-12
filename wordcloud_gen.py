@@ -23,7 +23,7 @@ class WordCloudGenerator:
             for i in range(3):
                 row = text_syns[i]
                 words.append(row[0][0])
-                nText = row[0][0] + " " + " ".join([x[0] for x in row[1]])
+                nText = " ".join([x[0] for x in row[1]])
                 self.wordcloud.generate(nText)
                 plt.figure()
                 plt.imshow(self.wordcloud, interpolation="bilinear")
@@ -33,7 +33,7 @@ class WordCloudGenerator:
             for i in range(len(text_syns)):
                 row = text_syns[i]
                 words.append(row[0][0])
-                nText = row[0][0] + " " + " ".join([x[0] for x in row[1]])
+                nText = " ".join([x[0] for x in row[1]])
                 self.wordcloud.generate(nText)
                 plt.figure()
                 plt.imshow(self.wordcloud, interpolation="bilinear")
@@ -50,7 +50,7 @@ class WordCloudGenerator:
         plt.savefig(fname + "_0.jpg", figsize=(200,100), dpi=100,bbox_inches='tight')
         
     
-# text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
-# wC = WordCloudGenerator()
-# wC.generate_wc(text=text1, fname='save_fig.jpg')
+#text1 = "Your Thanksgiving dinner tasted delicious. Thank you so much, and I hope to come again next year!"
+#wC = WordCloudGenerator()
+#print(wC.generate_wc(text=text1, fname='save_fig.jpg'))
 
