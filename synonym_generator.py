@@ -38,10 +38,7 @@ pos_dict = {'VB': wordnet.VERB,
             'JJS': wordnet.ADJ}
 
 class SynonymGenerator:
-    #def __init__(self):
-        #self.text = text
-        #self.tokenized_text = nltk.word_tokenize(self.text)
-    
+
     def get_important_words(self, tokenized_text):
         tagged = nltk.pos_tag(tokenized_text)
         word_to_pos = {}
@@ -53,8 +50,7 @@ class SynonymGenerator:
     def get_word_to_synonyms_dict(self, n, text, tokenized_text):
         word_to_syns_dict = {}
         word_to_pos = self.get_important_words(tokenized_text)    
-        
-        #for w in self.tokenized_text:
+
         for w in tokenized_text:
             
             if w in word_to_pos:
@@ -63,13 +59,10 @@ class SynonymGenerator:
                 if original_synset:
                     word = Word(w)
                     p_o_s = pos_dict_thesaurus[word_to_pos[w]]
-                    #print(w, word_to_pos[w], p_o_s)
                     syns = word.synonyms('all', partOfSpeech=p_o_s)
                     flat_list = [item for sublist in syns for item in sublist]
                     for candidate_syn in flat_list:
                         candidate_synsets = wordnet.synsets(candidate_syn, pos=pos_dict[word_to_pos[w]])
-                        #print(candidate_syn, ":", candidate_synsets)
-                        #print(candidate_syn)
                         if len(candidate_synsets) > 0:
                             list_sims = [original_synset.wup_similarity(x) for x in candidate_synsets if original_synset.wup_similarity(x)]
                             if len(list_sims) > 0:
@@ -84,10 +77,7 @@ class SynonymGenerator:
     def get_tense_plurality_dict(self, n, text, tokenized_text):
         correct_tense_number_dict = {}
         wordpos_to_syns_dict = self.get_word_to_synonyms_dict(n, text, tokenized_text)
-        #print(wordpos_to_syns_dict)
-        #print()
         for (word, pos), list_syns in wordpos_to_syns_dict.items():
-            #print(word, pos, list_syns)
             #if pos == 'VB':
             if pos == 'VBD':
                 correct_tense_number_dict[word] = [conjugate(tup[0], tense=PAST) for tup in list_syns]
