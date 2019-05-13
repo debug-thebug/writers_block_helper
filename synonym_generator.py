@@ -106,8 +106,11 @@ class SynonymGenerator:
         for i in range(n, 0, -1):
             alternate_sentence = text
             for key in d:
-                i_new = i if i <= len(d[key]) else len(d[key])
-                alternate_sentence = alternate_sentence.replace(key, d[key][i_new])
+                i_new = i if i <= len(d[key]) else len(d[key])-1
+                try:
+                    alternate_sentence = alternate_sentence.replace(key, d[key][i_new])
+                except IndexError:
+                    print("Error index: " + alternate_sentence)
             alternate_sentences.append(alternate_sentence)
         return alternate_sentences
             

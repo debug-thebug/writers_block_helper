@@ -6,6 +6,7 @@ class dbHandler:
     def __init__(self):
         print("Connecting to database...")
         client = pymongo.MongoClient("mongodb+srv://SSG:Pipeline123@cluster0-rjugd.mongodb.net/test?retryWrites=true")
+        #client = pymongo.MongoClient("mongodb://SSG:Pipeline123@cluster0-rjugd.mongodb.net/test?retryWrites=true")
         db = client.get_database("user_stats")
         self.client = client
         self.db = db
@@ -16,6 +17,7 @@ class dbHandler:
     # need to reconnect to db for some reason (example lost connection)
     def connectToDb(self):
         client = pymongo.MongoClient("mongodb+srv://SSG:Pipeline123@cluster0-rjugd.mongodb.net/test?retryWrites=true")
+        #client = pymongo.MongoClient("mongodb://SSG:Pipeline123@cluster0-rjugd.mongodb.net/test?retryWrites=true")
         db = client.get_database("user_stats")
         self.client = client
         self.db = db

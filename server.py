@@ -2,7 +2,6 @@ from tornado.web import Application
 from tornado.web import RequestHandler
 from tornado.ioloop import IOLoop
 from tornado.web import StaticFileHandler
-import json
 from mongodb_connector import dbHandler
 from validity_checker import ValidityChecker
 from synonym_generator import SynonymGenerator
@@ -46,6 +45,14 @@ class InputHandler(RequestHandler):
             words = self.application.wcgenerator.generate_wc(text=input_text,
                                                              fname="Dynamic_Word_Cloud")
     
+    
+            # Insert valid synonymous sentences to database
+            for sentence in sentences:
+                self.application.db.insertSentenceToDb({
+                    "custom_id": str(uuid.uuid4()),
+                    "sentence": sentence
+                })
+    
             # Get history of synonymous sentences, generate frequency-relative word cloud.
             sentence = ""
             for post in self.application.db.sentence_collection.find():
@@ -57,20 +64,11 @@ class InputHandler(RequestHandler):
             self.render("frontend_form.html", message=input_text,
                         corrections=None, sentences=sentences, words=words,
                         wordcloud=True)
-
-            # Insert valid synonymous sentences to database
-            for sentence in sentences:
-                self.application.db.insertSentenceToDb({
-                    "custom_id": str(uuid.uuid4()),
-                    "sentence": sentence
-                })
         
         else:
             self.render("frontend_form.html", message=input_text,
                         corrections=corrections, sentences=None, words=None,
                         wordcloud=False)
-
-
 
 if __name__ == "__main__":
     logging_level = logging.getLevelName('INFO')
